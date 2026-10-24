@@ -237,6 +237,9 @@ nav button .nav-ico,nav button .lbl-s{display:none}
 .sync-chip .sdot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
 .sync-chip.ok .sdot{background:var(--pos)} .sync-chip.warn .sdot{background:var(--warn)} .sync-chip.err .sdot{background:var(--neg)}
 .sync-chip.busy .sdot{animation:pulse 1s ease-in-out infinite}
+/* a newer version is published while the app is open: a reload away */
+.upd-chip{color:var(--text)} .upd-chip .sdot{background:var(--accent)}
+.upd-chip:not(.hidden) + .sync-chip{margin-left:0}
 @keyframes pulse{50%{opacity:.25}}
 /* phone: a slim header, the tabs as a bar of icons at the bottom, tables cut down to what matters */
 .m-only{display:none}
@@ -281,6 +284,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
     <button data-tab="networth"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM5 8l2.5-4h9L19 8M16 14h2"/></svg><span class="lbl">Net worth</span><span class="lbl-s">Net worth</span></button>
     <button data-tab="settings"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="lbl">Settings</span><span class="lbl-s">Settings</span></button>
   </nav>
+  <button class="sync-chip upd-chip hidden" id="updChip" data-act="app-update"><span class="sdot"></span>Update<span class="m-hide" id="updVer"></span></button>
   <button class="sync-chip hidden" id="syncChip" data-act="sync-open" title="Sync with OneDrive"><span class="sdot"></span><span id="syncChipText"></span></button>
 </header>
 
@@ -4052,6 +4056,7 @@ document.addEventListener('click', e => {
   if (el.tagName === 'A') e.preventDefault();
   switch (act) {
     case 'go': showTab(el.dataset.tab); break;
+    case 'app-update': location.reload(); break;
     case 'sync-open': showTab('settings'); $('#syncCard').scrollIntoView({ block: 'center' }); break;
     case 'sync-signin': msSignIn(false); break;
     case 'sync-now': sync.checked = 0; syncNow(); break;
@@ -4272,8 +4277,24 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.29 (statement check)';
+const APP_VERSION = '1.30 (new versions show at once)';
 $('#appVersion').textContent = APP_VERSION;
+// a newer version published while the app is open: offer a reload rather than reloading by itself
+let updChecked = 0;
+const verParts = v => v.split(' ')[0].split('.').map(Number);
+const isNewer = (a, b) => { const x = verParts(a), y = verParts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+async function checkUpdate() {
+  if (!/^https?:$/.test(location.protocol) || !navigator.onLine || document.visibilityState !== 'visible' || Date.now() - updChecked < 300000) return;
+  updChecked = Date.now();
+  try {
+    const res = await fetch(location.pathname, { cache: 'no-cache' });
+    const v = res.ok && ((await res.text()).match(/const APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+    if (!v || !isNewer(v, APP_VERSION)) return;
+    $('#updVer').textContent = ' to ' + v.split(' ')[0];
+    $('#updChip').title = 'Money Tracker ' + v + ' is published. Click to reload and use it.';
+    $('#updChip').classList.remove('hidden');
+  } catch {}
+}
 const msBack = syncable() ? msReturn() : null; // back from Microsoft's sign-in page
 const migrated = runMigrations();
 applyTheme();
@@ -4286,6 +4307,10 @@ showTab(hashTab());
 if (migrated.length) toast(migrated.join('. ') + '.', false, 8000);
 if (!window.Chart) toast('Charts could not load. Check your internet connection. Everything else works.', true, 6000);
 syncStart(msBack);
+setTimeout(checkUpdate, 3000);
+document.addEventListener('visibilitychange', checkUpdate);
+window.addEventListener('focus', checkUpdate);
+setInterval(checkUpdate, 900000);
 // works offline and installs on a phone's home screen when served from the web
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
