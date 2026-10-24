@@ -850,8 +850,8 @@ function save() {
 // offline and uploaded when the connection is back. The app is registered once with Microsoft
 // (Entra ID: a single-page app for personal accounts, with the page's address as redirect URI);
 // the client ID goes here. It is not a secret.
-const MS_CLIENT_ID = '';
-const APP_URL = ''; // where the app is published (shown to the PC app, which cannot sign in)
+const MS_CLIENT_ID = '40e40909-3557-4005-8ff6-1bffe6860470';
+const APP_URL = 'https://bappab26.github.io/money-tracker/'; // where the app is published (shown when opened as a file, which cannot sign in)
 const MS_AUTH = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
 const MS_SCOPES = 'Files.ReadWrite.AppFolder offline_access openid profile';
 const SYNC_URL = 'https://graph.microsoft.com/v1.0/me/drive/special/approot:/money-tracker.json';
@@ -870,7 +870,8 @@ const hasData = s => !!s && ['transactions', 'holdings', 'accounts', 'goals', 'i
 
 // Sign-in with a code and a one-time proof (PKCE), the way for apps with no server of their own
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const redirectUri = () => location.origin + location.pathname;
+// …/index.html comes back to …/ (the same page), so only that one address needs registering
+const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, '');
 async function msSignIn(silent) { location.assign(await msAuthorizeUrl(silent)); }
 async function msAuthorizeUrl(silent) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48))), st = b64url(crypto.getRandomValues(new Uint8Array(16)));
@@ -3986,7 +3987,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.27 (phone layout, OneDrive sync)';
+const APP_VERSION = '1.28 (OneDrive sync on)';
 $('#appVersion').textContent = APP_VERSION;
 const msBack = syncable() ? msReturn() : null; // back from Microsoft's sign-in page
 const migrated = runMigrations();
