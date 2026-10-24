@@ -128,6 +128,29 @@ label.field input,label.field select{color:var(--text);font-size:14px}
 .imp-table input,.imp-table select{padding:4px 6px;font-size:13px;width:100%}
 .imp-table tr.off td{opacity:.45}
 .imp-table .flag{font-size:11px;color:var(--warn);white-space:nowrap}
+/* statement check: lists that fit a phone as well as a computer */
+#chkDlg[open]{display:flex;flex-direction:column}
+#chkDlg .dlg-body{flex:1 1 auto;min-height:0}
+.chk-note{background:var(--surface2);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px}
+.chk-st+.chk-st{margin-top:22px;padding-top:16px;border-top:1px solid var(--border)}
+.chk-st>h3{margin:0 0 10px;font-size:16px}
+.chk-acct{margin-top:14px}
+.chk-acct>h4{margin:0 0 6px;font-size:15px}
+.chk-sec{margin-top:14px}
+.chk-sec>h4{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 2px;font-size:14px}
+.chk-sec>h4 .n{color:var(--muted);font-weight:400}
+.chk-sec>h4 .btn{margin-left:auto}
+.chk-sec>.hint{margin:0 0 2px}
+.chk-sec>summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);padding:4px 0}
+.chk-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.chk-row:last-child{border-bottom:0}
+.chk-desc{font-weight:500;overflow-wrap:anywhere}
+.chk-sub{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.chk-amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;text-align:right}
+.chk-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.chk-act:empty{display:none}
+.chk-ok{margin:10px 0 0;font-size:13px}
+.chk-foot{margin:16px 0 0;justify-content:flex-end}
 tr.acct-row td{background:var(--surface2);padding-top:7px;padding-bottom:7px}
 .acct-name{font-weight:700;margin-right:6px}
 .acct-meta{font-size:12px}
@@ -242,6 +265,8 @@ nav button .nav-ico,nav button .lbl-s{display:none}
   .kpis,#kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .kpi{padding:12px}
   .kpi .value{font-size:18px}
+  .chk-row{grid-template-columns:minmax(0,1fr) auto}
+  .chk-act{grid-column:1/-1}
 }
 </style>
 </head>
@@ -289,6 +314,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       <h2>Income &amp; expenses</h2>
       <div class="toolbar" style="margin:0">
         <button class="btn hidden" id="undoImport" data-act="undo-import">Undo last import</button>
+        <button class="btn" data-act="check" title="Compare a bank or card statement with your entries, without importing it">Check a statement</button>
         <button class="btn" data-act="import">Import PDF / CSV</button>
         <button class="btn primary" data-act="add-tx">+ Add transaction</button>
       </div>
@@ -322,11 +348,13 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       <div class="toolbar inv-only-holdings" style="margin:0">
         <span class="muted" id="priceStatus"></span>
         <button class="btn" data-act="refresh-prices" id="refreshBtn">↻ Refresh prices</button>
+        <button class="btn" data-act="check" title="Compare a Disnat or Wealthsimple statement with your holdings and history, without importing it">Check statement</button>
         <button class="btn" data-act="import" title="Disnat or Wealthsimple statement (PDF)">Import statement</button>
         <button class="btn primary" data-act="add-holding">+ Add holding</button>
       </div>
       <div class="toolbar inv-only-history" style="margin:0">
         <button class="btn" data-act="export-inv-csv" title="The lines shown below, as a spreadsheet">Export CSV</button>
+        <button class="btn" data-act="check" title="Compare a Disnat or Wealthsimple statement with your history, without importing it">Check statement</button>
         <button class="btn primary" data-act="import" title="Disnat or Wealthsimple statement (PDF)">Import statement</button>
       </div>
     </div>
@@ -576,6 +604,13 @@ nav button .nav-ico,nav button .lbl-s{display:none}
     </div>
   </div>
   <div class="dlg-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" data-act="inv-confirm" id="invConfirm">Import</button></div>
+</dialog>
+
+<!-- Statement check: a statement against your entries, holdings and history (nothing imported) -->
+<dialog id="chkDlg" class="wide">
+  <div class="dlg-head"><h3>Check a statement</h3><span class="muted" id="chkFile"></span></div>
+  <div class="dlg-body" id="chkBody"></div>
+  <div class="dlg-foot"><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <!-- OneDrive and this device both changed: which version to keep -->
@@ -3487,8 +3522,9 @@ function guessCsvMap(header, data) {
   }
   return { date, desc, amount: debit >= 0 ? -1 : amount, debit, credit };
 }
-function csvToRows() {
-  const { data, map } = importCtx;
+// mark: untick the lines that look already imported (not wanted when checking a statement)
+function csvToRows(ctx = importCtx, mark = true) {
+  const { data, map } = ctx;
   const order = $('#impOrder').value;
   const out = [];
   let colHasNeg = false;
@@ -3511,7 +3547,7 @@ function csvToRows() {
     const desc = cleanDesc(map.desc >= 0 ? r[map.desc] : '');
     out.push(makeRow(d.iso, desc, amt, type));
   }
-  return { rows: markDuplicates(out), info: '' };
+  return { rows: mark ? markDuplicates(out) : out, info: '' };
 }
 function renderCsvMap() {
   const { header, map } = importCtx;
@@ -3528,54 +3564,64 @@ async function readText(file) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
   catch { return new TextDecoder('windows-1252').decode(buf); }
 }
+// Reads one statement picked for Import or Check: {kind: 'inv', st} (an investment statement),
+// {kind: 'pdf', pages, name, res} (a bank or card statement) or {kind: 'csv', header, data, map}.
+// Null when there is nothing to read (password not given, a card statement with no transactions).
+async function readStatementFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.pdf')) {
+    if (!window.pdfjsLib) throw new Error('The PDF reader could not load. Check your internet connection and reload the page.');
+    toast('Reading ' + file.name + '…');
+    const buf = pdfBytes(await file.arrayBuffer());
+    let pages;
+    try { pages = await pdfToPages(buf); }
+    catch (e) {
+      if (e && e.name === 'PasswordException') {
+        const pw = prompt(`"${file.name}" is password-protected. Enter its password to open it (it is not stored):`);
+        if (!pw) return null;
+        pages = await pdfToPages(pdfBytes(await file.arrayBuffer()), pw);
+      } else throw e;
+    }
+    if (!pages.some(p => p.length)) throw new Error(`No text found in "${file.name}". It is probably a scanned image. Try downloading the statement as CSV from your bank instead.`);
+    const broker = brokerOf(pages);
+    if (broker) {
+      const st = broker === 'wealthsimple-activity' ? parseWsActivity(pages, file.name) : broker === 'wealthsimple' ? parseWealthsimple(pages, file.name) : parseDisnat(pages, file.name);
+      if (!st.accounts.length) throw new Error(`No accounts recognised in the investment statement "${file.name}".`);
+      return { kind: 'inv', st };
+    }
+    const res = parsePdfPages(pages, $('#impOrder').value, file.name);
+    if (!res.rows.length) {
+      if (res.isCard) { toast(`"${file.name}" is a credit card statement with no transactions in it: nothing was bought or paid on the card that period.`, false, 7000); return null; }
+      throw new Error(`No transactions recognised in "${file.name}". If your bank offers a CSV export, try that instead.`);
+    }
+    return { kind: 'pdf', pages, name: file.name, res };
+  }
+  if (/\.(csv|tsv|txt)$/.test(name)) {
+    const rows = parseCSV(await readText(file));
+    if (!rows.length) throw new Error(`"${file.name}" is empty.`);
+    const h = rows.slice(0, 25).findIndex(r => r.some(c => /date|datum|fecha/i.test(c)) && r.length > 1);
+    let header, data;
+    if (h >= 0) { header = rows[h].map((c, i) => c || `Column ${i + 1}`); data = rows.slice(h + 1); }
+    else { const n = Math.max(...rows.map(r => r.length)); header = [...Array(n)].map((_, i) => `Column ${i + 1}`); data = rows; }
+    return { kind: 'csv', header, data, map: guessCsvMap(header, data), file: file.name, name: file.name };
+  }
+  throw new Error(`"${file.name}": only PDF and CSV statements can be read.`);
+}
 async function handleImportFiles(files) {
   let ctx = null, inv = null; // bank/card statements, investment statements
   for (const file of files) {
-    const name = file.name.toLowerCase();
     try {
-      if (name.endsWith('.pdf')) {
-        if (!window.pdfjsLib) throw new Error('The PDF reader could not load. Check your internet connection and reload the page.');
-        toast('Reading ' + file.name + '…');
-        const buf = pdfBytes(await file.arrayBuffer());
-        let pages;
-        try { pages = await pdfToPages(buf); }
-        catch (e) {
-          if (e && e.name === 'PasswordException') {
-            const pw = prompt(`"${file.name}" is password-protected. Enter its password to open it (it is not stored):`);
-            if (!pw) continue;
-            pages = await pdfToPages(pdfBytes(await file.arrayBuffer()), pw);
-          } else throw e;
-        }
-        if (!pages.some(p => p.length)) throw new Error(`No text found in "${file.name}". It is probably a scanned image. Try downloading the statement as CSV from your bank instead.`);
-        const broker = brokerOf(pages);
-        if (broker) {
-          const st = broker === 'wealthsimple-activity' ? parseWsActivity(pages, file.name) : broker === 'wealthsimple' ? parseWealthsimple(pages, file.name) : parseDisnat(pages, file.name);
-          if (!st.accounts.length) throw new Error(`No accounts recognised in the investment statement "${file.name}".`);
-          (inv = inv || []).push(st);
-          continue;
-        }
-        const first = parsePdfPages(pages, $('#impOrder').value, file.name);
-        if (!first.rows.length) {
-          if (first.isCard) { toast(`"${file.name}" is a credit card statement with no transactions in it: nothing was bought or paid on the card that period.`, false, 7000); continue; }
-          throw new Error(`No transactions recognised in "${file.name}". If your bank offers a CSV export, try that instead.`);
-        }
-        ctx = ctx || { kind: 'pdf', pdfs: [] };
-        ctx.pdfs.push({ pages, name: file.name });
-      } else if (/\.(csv|tsv|txt)$/.test(name)) {
-        const rows = parseCSV(await readText(file));
-        if (!rows.length) throw new Error(`"${file.name}" is empty.`);
-        const h = rows.slice(0, 25).findIndex(r => r.some(c => /date|datum|fecha/i.test(c)) && r.length > 1);
-        let header, data;
-        if (h >= 0) { header = rows[h].map((c, i) => c || `Column ${i + 1}`); data = rows.slice(h + 1); }
-        else { const n = Math.max(...rows.map(r => r.length)); header = [...Array(n)].map((_, i) => `Column ${i + 1}`); data = rows; }
-        importCtx = { kind: 'csv', header, data, map: guessCsvMap(header, data), file: file.name };
-        const res = csvToRows();
-        importRows = res.rows;
+      const got = await readStatementFile(file);
+      if (!got) continue;
+      if (got.kind === 'inv') { (inv = inv || []).push(got.st); continue; }
+      if (got.kind === 'csv') {
+        importCtx = got;
+        importRows = csvToRows().rows;
         openImport(file.name, []);
         return; // CSV files are reviewed one at a time (each has its own column layout)
-      } else {
-        throw new Error(`"${file.name}": only PDF and CSV files can be imported.`);
       }
+      ctx = ctx || { kind: 'pdf', pdfs: [] };
+      ctx.pdfs.push({ pages: got.pages, name: got.name });
     } catch (e) {
       console.error(e);
       toast(e.message || String(e), true, 7000);
@@ -3682,6 +3728,234 @@ function confirmImport() {
   showTab('transactions');
   toast(`Imported ${sel.length} transactions`);
 }
+
+/* =========================================================
+   Statement check: a statement against what is already in the app
+   ========================================================= */
+// Reads statements the way Import does, but adds nothing by itself. Each line of a bank or card
+// statement is paired with one of your transactions (typed in or imported), and what is left on
+// either side is listed. Transactions are not tied to an account, so an entry paid cash or with a
+// card whose statement isn't checked shows as "not on the statement" too. Investment statements are
+// compared with the account's holdings and history. A fix (add a missing line, take the statement's
+// amount…) is only made when you click it.
+let chk = null, fileMode = 'import'; // chk: {bank: [{name, res, from, to}], inv: [statements], importId, added, view}
+const CHK_DAYS = 5, CHK_NEAR_DAYS = 3;
+const dayGap = (a, b) => Math.round(Math.abs(Date.parse(a) - Date.parse(b)) / 864e5);
+async function checkFiles(files) {
+  const bank = [], inv = [];
+  for (const file of files) {
+    try {
+      const got = await readStatementFile(file);
+      if (!got) continue;
+      if (got.kind === 'inv') { inv.push(got.st); continue; }
+      const res = got.kind === 'csv' ? csvToRows(got, false) : got.res;
+      if (!res.rows.length) throw new Error(`No transactions recognised in "${got.name}". Open it with Import to pick its columns.`);
+      const dates = res.rows.map(r => r.date).sort();
+      // a card statement only gives its closing date: its lines start on the day of the first one
+      const from = res.period && res.period.kind === 'period' ? res.period.start : dates[0];
+      bank.push({ name: got.name, res, from, to: res.period ? res.period.end : dates[dates.length - 1] });
+    } catch (e) {
+      console.error(e);
+      toast(e.message || String(e), true, 7000);
+    }
+  }
+  if (!bank.length && !inv.length) return;
+  inv.sort((a, b) => a.date.localeCompare(b.date));
+  chk = { bank, inv, importId: uid(), added: 0 };
+  renderCheck();
+  const d = $('#chkDlg');
+  if (!d.open) d.showModal();
+  $('#chkDlg .dlg-body').scrollTop = 0;
+}
+// Pairs statement lines with transactions: the same amount and type within a few days first (a card
+// purchase is posted a day or two after it is made), then the same amount with another type, then a
+// close amount on about the same day (a typo, a tip). Each side is used once, closest pairs first.
+function pairLines(lines, txs, near = true) {
+  const open = new Set(lines), free = new Set(txs), pairs = [];
+  const same = (l, t) => round2(l.amount) === round2(t.amount);
+  // a word in common ("SAQ SELECTION 123" and "SAQ", "METRO PLUS" and "Groceries Metro"): the same store
+  const words = s => new Set(normalize(s).replace(/[^a-z ]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)));
+  const sameShop = (a, b) => { const w = words(b); return [...words(a)].some(x => w.has(x)); };
+  const close = (l, t) => {
+    const d = Math.abs(l.amount - t.amount), big = Math.max(l.amount, t.amount);
+    return d <= Math.max(1, big * 0.15) || (d <= big * 0.5 && sameShop(l.desc, t.desc));
+  };
+  const pass = (kind, days, ok) => {
+    const cand = [];
+    for (const l of open) for (const t of free) {
+      const g = dayGap(l.date, t.date);
+      if (g <= days && ok(l, t)) cand.push({ l, t, g, d: Math.abs(l.amount - t.amount) });
+    }
+    cand.sort((a, b) => a.d - b.d || a.g - b.g);
+    for (const c of cand) if (open.has(c.l) && free.has(c.t)) { open.delete(c.l); free.delete(c.t); pairs.push({ line: c.l, tx: c.t, kind, gap: c.g }); }
+  };
+  pass('same', CHK_DAYS, (l, t) => same(l, t) && l.type === t.type);
+  pass('type', CHK_DAYS, same);
+  if (near) pass('amount', CHK_NEAR_DAYS, (l, t) => l.type === t.type && !same(l, t) && close(l, t));
+  return { pairs, lines: [...open], txs: [...free] };
+}
+function checkBank() {
+  const lines = chk.bank.flatMap(b => b.res.rows.map(r => ({ ...r, src: b.name })));
+  const from = chk.bank.map(b => b.from).sort()[0], to = chk.bank.map(b => b.to).sort().pop();
+  const pool = state.transactions.filter(t => t.date >= shiftISO(from, -CHK_DAYS) && t.date <= shiftISO(to, CHK_DAYS));
+  const main = pairLines(lines.filter(l => l.include), pool);
+  // lines Import leaves out on purpose (balance lines, the chequing side of a transfer to savings,
+  // payments to the card) are not expected in your entries, but match one you typed for them
+  const rest = pairLines(lines.filter(l => !l.include), main.txs, false);
+  const byDate = (a, b) => (a.line || a).date.localeCompare((b.line || b).date);
+  const ok = [...main.pairs.filter(p => p.kind === 'same'), ...rest.pairs].sort(byDate);
+  const diff = main.pairs.filter(p => p.kind !== 'same').sort(byDate);
+  const extra = rest.txs.filter(t => chk.bank.some(b => t.date >= b.from && t.date <= b.to)).sort(byDate);
+  // the same amount a few days from an entry that matched: probably typed twice
+  const twice = new Set(extra.filter(t => [...ok, ...diff].some(p => round2(p.tx.amount) === round2(t.amount) && dayGap(p.tx.date, t.date) <= CHK_DAYS)));
+  return { from, to, ok, diff, extra, twice, missing: main.lines.sort(byDate), expected: lines.filter(l => l.include).length,
+    matched: main.pairs.filter(p => p.kind === 'same').length, skipped: rest.lines.length };
+}
+const chkRow = (main, sub, amt = '', act = '') =>
+  `<div class="chk-row"><div><div class="chk-desc">${main}</div>${sub ? `<div class="chk-sub">${sub}</div>` : ''}</div>${amt}<div class="chk-act">${act}</div></div>`;
+const chkSec = (title, n, rows, hint = '', tool = '') =>
+  `<div class="chk-sec"><h4>${title} <span class="n">${n}</span>${tool}</h4>${hint ? `<p class="hint">${hint}</p>` : ''}${rows}</div>`;
+const chkAmt = (amount, type) => `<div class="chk-amt ${type === 'income' ? 'pos' : type === 'transfer' ? 'muted' : ''}">${type === 'income' ? '+' : type === 'expense' ? '−' : ''}${money(amount)}</div>`;
+function renderCheckBank(r) {
+  const s = n => n === 1 ? '' : 's', many = chk.bank.length > 1, src = l => many ? ' · ' + esc(l.src) : '';
+  const span = `${dateLabel(r.from)} to ${dateLabel(r.to)}`, notes = [];
+  chk.view.missing = r.missing; chk.view.diff = r.diff;
+  // the statement's own checks: were all its lines read?
+  for (const b of chk.bank) {
+    const res = b.res, who = many ? `<b>${esc(b.name)}</b>: ` : '';
+    const checks = (res.balanceChecks || []).filter(c => c.lines), cardBad = res.cardTotal != null && Math.abs(res.cardTotal - res.cardSum) >= 0.01;
+    if (cardBad || checks.some(c => !c.ok)) notes.push(`${who}<span class="warn">⚠ The lines read don't add up to the statement's ${cardBad ? 'total' : 'closing balance'}: one may have been missed, so compare with the statement too.</span>`);
+    else if (res.cardTotal != null || checks.length) notes.push(`${who}<span class="pos">✓ Every line of the statement was read: they add up to its ${res.cardTotal != null ? 'total' : 'balances'}.</span>`);
+    if (res.yearFrom === 'guess') notes.push(`${who}<span class="warn">No statement period found: dates without a year were read as ${res.year}.</span>`);
+  }
+  const good = !r.missing.length && !r.diff.length && !r.extra.length;
+  const lead = good
+    ? `<span class="pos">✓ Everything matches: the ${r.expected} line${s(r.expected)} of the statement ${r.expected === 1 ? 'is' : 'are'} in your entries, and each of your entries from ${span} is on it.</span>`
+    : r.matched === r.expected ? `<span class="pos">✓ ${r.expected === 1 ? 'The line' : `All <b>${r.expected}</b> lines`} of the statement ${r.expected === 1 ? 'is' : 'are'} in your entries.</span>`
+    : `<b>${r.expected}</b> line${s(r.expected)} on the statement: <b>${r.matched}</b> match${r.matched === 1 ? 'es' : ''} your entries${r.diff.length ? `, <b>${r.diff.length}</b> differ${r.diff.length === 1 ? 's' : ''}` : ''}${r.missing.length ? `, <b>${r.missing.length}</b> ${r.missing.length === 1 ? 'is' : 'are'} missing from them` : ''}.`;
+  const tail = good ? '' : r.extra.length ? `<b>${r.extra.length}</b> of your entries from ${span} ${r.extra.length === 1 ? 'is' : 'are'} not on the statement.` : `Each of your entries from ${span} is on it.`;
+  const head = lead + (tail ? ' ' + tail : '');
+  let html = `<div class="chk-st"><h3>${many ? `${chk.bank.length} statements` : 'Statement'} from ${span}</h3>
+    <div class="chk-note">${head}${notes.length ? '<br>' + notes.join('<br>') : ''}</div>`;
+  if (r.missing.length) html += chkSec('On the statement, not in your entries', r.missing.length,
+    r.missing.map((l, i) => chkRow(esc(l.desc), `${dateLabel(l.date)} · ${esc(l.category)}${src(l)}${l.flag ? ` · <span class="warn">${esc(l.flag)}</span>` : ''}`, chkAmt(l.amount, l.type),
+      `<button class="btn sm" data-act="chk-add" data-i="${i}">Add</button>`)).join(''),
+    '', r.missing.length > 1 ? `<button class="btn sm primary" data-act="chk-add-all">Add all ${r.missing.length}</button>` : '');
+  if (r.diff.length) html += chkSec('Different amount or type', r.diff.length, r.diff.map((p, i) => {
+    const { line: l, tx: t } = p, yours = t.desc !== l.desc ? ` as “${esc(t.desc)}”` : '', when = p.gap ? ` on ${dateLabel(t.date)}` : '';
+    return p.kind === 'amount'
+      ? chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)} · you entered <b>${money(t.amount)}</b>${yours}${when}`, chkAmt(l.amount, l.type),
+          `<button class="btn sm" data-act="chk-use" data-i="${i}">Use ${money(l.amount)}</button><button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button>`)
+      : chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)} · the statement says ${l.type === 'income' ? 'money in' : l.type === 'expense' ? 'money out' : 'a transfer'}, you entered it as ${t.type === 'transfer' ? 'a transfer' : 'an ' + t.type} (${esc(t.category)})${yours}${when}`, chkAmt(l.amount, l.type),
+          `<button class="btn sm" data-act="chk-use" data-i="${i}">Make it ${l.type === 'transfer' ? 'a transfer' : l.type === 'income' ? 'income' : 'an expense'}</button><button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button>`);
+  }).join(''));
+  if (r.extra.length) html += chkSec('In your entries, not on the statement', r.extra.length,
+    r.extra.map(t => chkRow(esc(t.desc), `${dateLabel(t.date)} · ${esc(t.category)}${r.twice.has(t) ? ' · <span class="warn">same amount as an entry that matches: entered twice?</span>' : ''}`, chkAmt(t.amount, t.type),
+      `<button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button><button class="btn sm danger" data-act="del-tx" data-id="${t.id}">Delete</button>`)).join(''),
+    'Paid cash, with another card or from another account? Those are fine. Otherwise it may be a mistake or entered twice.');
+  if (r.ok.length) html += `<details class="chk-sec"><summary>${r.ok.length} line${s(r.ok.length)} match${r.ok.length === 1 ? 'es' : ''} your entries</summary>${r.ok.map(p => {
+    const { line: l, tx: t } = p;
+    return chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)}${t.desc !== l.desc ? ` · yours: “${esc(t.desc)}”` : ''}${p.gap ? ` · entered ${p.gap} day${s(p.gap)} ${t.date < l.date ? 'earlier' : 'later'}` : ''}`, chkAmt(l.amount, l.type));
+  }).join('')}</details>`;
+  if (r.skipped) html += `<p class="hint" style="margin-top:12px">${r.skipped} line${s(r.skipped)} left out, as Import does: balance lines, payments to the card, and the other side of transfers between your accounts.</p>`;
+  return html + '</div>';
+}
+// An investment statement's accounts against their holdings and history
+function checkInv(st) {
+  const act = st.kind === 'activity';
+  const from = st.start || (st.prevDate ? shiftISO(st.prevDate, 1) : st.date.slice(0, 8) + '01'), to = st.date;
+  const inSpan = d => !!d && d >= from && d <= to;
+  return st.accounts.filter(a => !act || a.include).map(a => {
+    const known = state.invAccounts[a.no], { fresh, dup } = splitNew(stActs(a)), seen = new Set(dup.map(([, y]) => y));
+    // the account's lines of the same period that are in the history but not on the statement (an
+    // activity statement prints currency conversions without their amounts: they are left out)
+    const extra = state.invActivity.filter(x => x.accountNo === a.no && !seen.has(x) && inSpan(x.date) && (!x.settle || inSpan(x.settle))
+      && !(act && /currency conversion/i.test(x.op || ''))).sort((x, y) => x.date.localeCompare(y.date));
+    const r = { a, known, fresh: fresh.sort((x, y) => x.date.localeCompare(y.date)), extra, nOk: dup.length };
+    if (act) return r;
+    // holdings by symbol and currency; an account never imported is compared with the holdings you
+    // added yourself
+    const pool = state.holdings.filter(h => h.type !== 'Cash' && (known ? h.accountNo === a.no : !h.accountNo));
+    r.hold = a.positions.map(p => {
+      const i = pool.findIndex(h => String(h.symbol).toUpperCase() === String(p.symbol).toUpperCase() && (h.cur || p.cur) === p.cur);
+      return { p, h: i < 0 ? null : pool.splice(i, 1)[0] };
+    });
+    r.holdExtra = known ? pool : [];
+    const cashOf = cur => state.holdings.find(h => h.accountNo === a.no && h.type === 'Cash' && h.cur === cur);
+    r.cash = !known ? [] : [...new Set([...Object.keys(a.cash).filter(c => a.cash[c]), ...state.holdings.filter(h => h.accountNo === a.no && h.type === 'Cash').map(h => h.cur)])]
+      .map(cur => { const h = cashOf(cur); return { cur, v: round2(a.cash[cur] || 0), h, have: h ? round2(h.shares) : 0 }; });
+    return r;
+  });
+}
+function renderCheckInv(st, si) {
+  const s = n => n === 1 ? '' : 's', act = st.kind === 'activity';
+  const qtyEq = (a, b) => Math.abs((+a || 0) - (+b || 0)) < 1e-6;
+  const edit = h => `<button class="btn sm" data-act="edit-holding" data-id="${h.id}">Edit</button>`;
+  const named = (sym, name) => `<b>${esc(sym)}</b>${name && name !== sym ? ' · ' + esc(name) : ''}`;
+  const actRow = (x, tool = '') => {
+    const t = actType(x.op), sym = actSym(x);
+    return chkRow(`<span class="chip ${t.cls}">${esc(t.label)}</span> ${sym ? `<b>${esc(sym)}</b> · ` : ''}${esc(prettyName(x.desc))}`,
+      `${dateLabel(x.date)}${x.qty ? ` · ${fmtQty(x.qty)}${x.price ? ' @ ' + priceFmt(x.price, x.cur) : ''}` : ''}`,
+      `<div class="chk-amt ${x.amount > 0 ? 'pos' : ''}">${x.amount > 0 ? '+' : x.amount < 0 ? '−' : ''}${money(Math.abs(x.amount), x.cur)}</div>`, tool);
+  };
+  let fixable = false, clean = true;
+  const blocks = checkInv(st).map(r => {
+    const { a, known } = r, notes = [], secs = [];
+    if (!act && (a.positions.length || r.cash.length)) {
+      const newer = known && known.asOf > st.date;
+      if (!known) notes.push('This account is not in your holdings yet: it is compared with the holdings you added yourself.');
+      else if (newer) notes.push(`Your holdings for this account come from a newer statement (${dateLabel(known.asOf)}), so differences are expected.`);
+      else if (known.asOf < st.date) notes.push(`Your holdings for this account come from the statement of ${dateLabel(known.asOf)}: importing this one brings them up to date.`);
+      const same = r.hold.filter(x => x.h && qtyEq(x.h.shares, x.p.qty)).length, cashOk = r.cash.filter(c => Math.abs(c.v - c.have) < 0.005).length;
+      const rows = [
+        ...r.hold.filter(x => x.h && !qtyEq(x.h.shares, x.p.qty)).map(({ p, h }) => chkRow(named(p.symbol, p.name), `${fmtQty(p.qty)} on the statement · ${fmtQty(h.shares)} in your holdings`, '', edit(h))),
+        ...r.hold.filter(x => !x.h).map(({ p }) => chkRow(named(p.symbol, p.name), `${fmtQty(p.qty)} on the statement, not in your holdings`, `<div class="chk-amt">${p.value != null ? money(p.value, p.vcur) : ''}</div>`)),
+        ...r.holdExtra.map(h => chkRow(named(h.symbol, h.name), `${fmtQty(h.shares)} in your holdings, not on the statement`, '', edit(h))),
+        ...r.cash.filter(c => Math.abs(c.v - c.have) >= 0.005).map(c => chkRow(`Cash ${esc(c.cur)}`, `${money(c.v, c.cur)} on the statement · ${money(c.have, c.cur)} in your holdings`, '', c.h ? edit(c.h) : ''))
+      ];
+      if (rows.length) { clean = false; if (!newer) fixable = true; }
+      // "6 other holdings and the cash match", "✓ 7 holdings and the cash match the statement"
+      const okParts = other => [same ? `${same}${other} holding${s(same)}` : '', cashOk ? 'the cash' : ''].filter(Boolean).join(' and ');
+      const verb = (same === 1 && !cashOk) || (!same && cashOk) ? 'matches' : 'match';
+      secs.push(rows.length ? chkSec('Holdings that differ', rows.length, rows.join(''), same || cashOk ? `${okParts(' other')} ${verb}.` : '')
+        : `<p class="chk-ok pos">✓ ${okParts('').replace(/^t/, 'T')} ${verb} the statement.</p>`);
+    }
+    if (r.fresh.length) { clean = false; fixable = true; secs.push(chkSec('On the statement, not in your history', r.fresh.length, r.fresh.map(x => actRow(x)).join(''))); }
+    if (r.extra.length) {
+      clean = false;
+      secs.push(chkSec('In your history, not on the statement', r.extra.length,
+        r.extra.map(x => actRow(x, `<button class="btn sm danger" data-act="del-inv-act" data-id="${x.id}">Delete</button>`)).join(''), 'From another statement, or added twice?'));
+    }
+    if (r.nOk) secs.push(`<p class="chk-ok pos">✓ ${r.nOk} activity line${s(r.nOk)} of the statement ${r.nOk === 1 ? 'is' : 'are'} in your history.</p>`);
+    if (!secs.length) secs.push('<p class="chk-ok muted">Nothing in this account on the statement.</p>');
+    return `<div class="chk-acct"><h4>${esc(acctName(a.no, a.name))} <span class="muted">${esc(a.no)}</span></h4>${notes.map(n => `<div class="chk-note">${n}</div>`).join('')}${secs.join('')}</div>`;
+  });
+  return `<div class="chk-st"><h3>${esc(st.broker)} ${act ? 'activity statement' : 'statement'} ${act && st.start ? `from ${dateLabel(st.start)} to` : 'of'} ${dateLabel(st.date)}</h3>
+    ${clean ? `<div class="chk-note"><span class="pos">✓ Everything on this statement matches your ${act ? 'history' : 'holdings and history'}.</span></div>` : ''}
+    ${blocks.join('')}
+    ${fixable ? `<div class="toolbar chk-foot"><span class="muted">Importing it ${act ? 'adds the missing lines' : 'updates the holdings and adds the missing lines'}; you review it first.</span><button class="btn primary" data-act="chk-import" data-i="${si}">Import this statement</button></div>` : ''}</div>`;
+}
+function renderCheck() {
+  if (!chk) return;
+  chk.view = { missing: [], diff: [] };
+  const parts = [];
+  if (chk.bank.length) parts.push(renderCheckBank(checkBank()));
+  chk.inv.forEach((st, si) => parts.push(renderCheckInv(st, si)));
+  $('#chkFile').textContent = [...chk.bank.map(b => b.name), ...chk.inv.map(st => st.file)].join(', ');
+  $('#chkBody').innerHTML = parts.join('');
+}
+// adds statement lines you were missing, as one import (Undo last import takes them all back out)
+function chkAdd(lines) {
+  const now = Date.now();
+  for (const l of lines) state.transactions.push({ id: uid(), created: now, importId: chk.importId, date: l.date, desc: l.desc.trim() || '(no description)', amount: round2(l.amount), type: l.type, category: l.category });
+  chk.added += lines.length;
+  state.lastImport = { id: chk.importId, count: chk.added, at: now };
+  save(); render(); renderCheck();
+  toast(`Added ${lines.length} transaction${lines.length === 1 ? '' : 's'}`);
+}
+$('#chkDlg').addEventListener('close', () => { chk = null; });
+// back from editing an entry or a holding: compare again
+['#txDlg', '#hDlg'].forEach(id => $(id).addEventListener('close', () => { if (chk) renderCheck(); }));
 
 /* =========================================================
    Backup / export / demo
@@ -3796,11 +4070,22 @@ document.addEventListener('click', e => {
       pendingCat = el.dataset.cat;
       showTab('transactions');
       break;
-    case 'import': $('#fileImport').value = ''; $('#fileImport').click(); break;
+    case 'import': case 'check': fileMode = act; $('#fileImport').value = ''; $('#fileImport').click(); break;
+    case 'chk-add': { const l = chk && chk.view.missing[+el.dataset.i]; if (l) chkAdd([l]); break; }
+    case 'chk-add-all': if (chk && chk.view.missing.length) chkAdd([...chk.view.missing]); break;
+    case 'chk-use': { // take the statement's amount, or its type (money in, out, transfer)
+      const p = chk && chk.view.diff[+el.dataset.i];
+      if (!p) break;
+      if (p.kind === 'amount') p.tx.amount = round2(p.line.amount);
+      else { p.tx.type = p.line.type; p.tx.category = p.line.category; }
+      save(); render(); renderCheck(); toast('Transaction updated');
+      break;
+    }
+    case 'chk-import': { const st = chk && chk.inv[+el.dataset.i]; if (!st) break; $('#chkDlg').close(); openInvImport([st]); break; }
     case 'add-tx': openTx(); break;
     case 'edit-tx': openTx(id); break;
     case 'del-tx':
-      if (confirm('Delete this transaction?')) { state.transactions = state.transactions.filter(t => t.id !== id); selected.delete(id); save(); render(); }
+      if (confirm('Delete this transaction?')) { state.transactions = state.transactions.filter(t => t.id !== id); selected.delete(id); save(); render(); renderCheck(); }
       break;
     case 'del-selected':
       if (confirm(`Delete ${selected.size} selected transactions?`)) { state.transactions = state.transactions.filter(t => !selected.has(t.id)); selected.clear(); save(); render(); }
@@ -3850,7 +4135,7 @@ document.addEventListener('click', e => {
     case 'ih-sec': ih.q = el.dataset.q; ih.type = ''; render(); break;
     case 'export-inv-csv': exportInvCsv(); break;
     case 'del-inv-act':
-      if (confirm('Delete this line from the history? Importing its statement again adds it back.')) { state.invActivity = state.invActivity.filter(x => x.id !== id); save(); render(); }
+      if (confirm('Delete this line from the history? Importing its statement again adds it back.')) { state.invActivity = state.invActivity.filter(x => x.id !== id); save(); render(); renderCheck(); }
       break;
     case 'h-sort': { // a column header: sort by it, or reverse when it already is
       const s = hSortOf(), by = el.dataset.by;
@@ -3905,7 +4190,7 @@ document.addEventListener('click', e => {
       break;
   }
 });
-$('#fileImport').addEventListener('change', e => { if (e.target.files.length) handleImportFiles([...e.target.files]); });
+$('#fileImport').addEventListener('change', e => { if (e.target.files.length) (fileMode === 'check' ? checkFiles : handleImportFiles)([...e.target.files]); });
 $('#fileBackup').addEventListener('change', async e => {
   const f = e.target.files[0];
   if (!f) return;
@@ -3987,7 +4272,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.28 (OneDrive sync on)';
+const APP_VERSION = '1.29 (statement check)';
 $('#appVersion').textContent = APP_VERSION;
 const msBack = syncable() ? msReturn() : null; // back from Microsoft's sign-in page
 const migrated = runMigrations();
