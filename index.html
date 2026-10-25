@@ -516,6 +516,8 @@ nav button .nav-ico,nav button .lbl-s{display:none}
           <input id="sTsxKey" autocomplete="off" spellcheck="false" placeholder="Paste your alphavantage.co key">
         </label>
         <p class="hint" style="margin-top:-6px">Finnhub's free plan has no TSX prices (VFV, XEQT…). With this key, Canadian holdings are looked up on Alpha Vantage and the others on your provider above.</p>
+        <label class="inline" style="color:var(--text)"><input type="checkbox" id="sAutoPrices"> Update prices automatically</label>
+        <p class="hint" style="margin-bottom:0">While the app is open: stocks every 15 minutes when the markets are open (9:30 to 16:00, weekdays) and once after the close, crypto every 15 minutes, exchange rates every 6 hours. Alpha Vantage's free key allows 25 lookups a day in all, so Canadian holdings are updated less often (with 3 of them, about every hour and a half). CDRs keep the price from your statements.</p>
       </div>
       <div class="card">
         <h3>Your data</h3>
@@ -903,7 +905,7 @@ function defaultState() {
   try { if (/en-US/.test(navigator.language)) cur = 'USD'; else if (/en-GB/.test(navigator.language)) cur = 'GBP'; } catch {}
   return {
     version: 1,
-    settings: { currency: cur, theme: 'auto', dateOrder: 'DMY', priceProvider: 'finnhub', apiKey: '' },
+    settings: { currency: cur, theme: 'auto', dateOrder: 'DMY', priceProvider: 'finnhub', apiKey: '', autoPrices: true },
     transactions: [], holdings: [], accounts: [], goals: [], snapshots: [], rules: {},
     customCats: { expense: [], income: [], transfer: [] }, // categories you added
     catLabels: { expense: {}, income: {}, transfer: {} }, // names you gave built-in categories
@@ -1276,21 +1278,84 @@ async function fetchQuote(sym, tsx) {
   const j = await r.json();
   return j.c > 0 ? j.c : null;
 }
-let refreshing = false;
-async function refreshPrices() {
+// CDRs trade in Canada under the US share's ticker but at a different price, so they keep the price
+// from your statements; other holdings from a Canadian (CAD) statement are looked up on the TSX.
+const isTsx = h => h.accountNo && h.cur === 'CAD' && !/[.:]/.test(h.symbol);
+const quoteSym = h => isTsx(h)
+  ? h.symbol + (state.settings.tsxKey || state.settings.priceProvider === 'alphavantage' ? '.TRT' : '.TO') : h.symbol;
+// the holdings whose price comes from Alpha Vantage (see fetchQuote)
+const viaAv = h => (isTsx(h) && !!state.settings.tsxKey) || state.settings.priceProvider === 'alphavantage';
+
+/* Automatic price updates, while the app is open and on screen: stocks every 15 minutes while the
+   markets are open (9:30 to 16:00 New York time on weekdays; Toronto keeps the same hours) and once more
+   after the close, crypto around the clock, exchange rates every 6 hours. Alpha Vantage's free key
+   allows 25 requests a day for all your devices together (and 5 a minute): each device uses at most 12,
+   spread over the trading day, so with 3 Canadian holdings they are updated about every hour and a half.
+   These updates stay on the device (moneytracker.live) instead of being saved with your data: two
+   devices saving new prices every 15 minutes would keep changing the same OneDrive file at the same time.
+   Each time the app draws itself, the prices found here replace the saved ones that are older. */
+const LIVE_KEY = 'moneytracker.live', AUTO_MS = 15 * 60e3, AV_PER_DAY = 12;
+let live = { p: {}, last: {}, av: {}, ...(readJSON(LIVE_KEY) || {}) };
+function keepLive() {
+  const ids = new Set(state.holdings.map(h => h.id));
+  for (const id of Object.keys(live.p)) if (!ids.has(id)) delete live.p[id];
+  try { localStorage.setItem(LIVE_KEY, JSON.stringify(live)); } catch {}
+}
+function applyLive() {
+  for (const h of state.holdings) {
+    const l = live.p[h.id];
+    if (l && l.at > (h.updated || 0)) { h.price = l.price; h.updated = l.at; }
+  }
+  const fx = live.fx;
+  if (fx && fx.base === state.settings.currency && !(state.fx && state.fx.base === fx.base && (state.fx.updated || 0) >= fx.updated)) state.fx = fx;
+}
+// New York's day of the week (0 = Sunday) and minute of the day
+function nyClock() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), min: +p.hour * 60 + +p.minute };
+}
+const MKT_OPEN = 570, MKT_SHUT = 965; // 9:30, and 16:05 for the closing prices
+const marketOpen = () => { const t = nyClock(); return t.wd >= 1 && t.wd <= 5 && t.min >= MKT_OPEN && t.min < MKT_SHUT; };
+// stocks last looked up at `last`: due again? (holidays aren't known: those days read unchanged prices)
+function stocksDue(last = 0, every) {
+  const t = nyClock(), now = Date.now(), weekday = t.wd >= 1 && t.wd <= 5;
+  if (weekday && t.min >= MKT_OPEN && t.min < MKT_SHUT) return now - last >= every;
+  if (weekday && t.min >= MKT_SHUT && last < now - (t.min - MKT_SHUT) * 60e3) return true; // the closing prices
+  return now - last >= 12 * 3600e3;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let refreshing = false, liveRenderPending = false;
+// auto: the 15-minute update (only what is due, kept on this device, no messages); otherwise the
+// Refresh prices button (everything, saved with your data)
+async function refreshPrices(auto = false) {
   if (refreshing) return;
-  if (!state.holdings.length) { toast('Add a holding first'); return; }
+  if (!state.holdings.length) { if (!auto) toast('Add a holding first'); return; }
+  const now = Date.now(), base = state.settings.currency, today = localISO();
+  if (live.av.day !== today) live.av = { day: today, n: 0 };
+  const since = k => now - (live.last[k] || 0);
+  const skipped = state.holdings.filter(h => h.noQuote && h.type !== 'Cash');
+  const stocks = state.holdings.filter(h => !['Crypto', 'Other', 'Cash'].includes(h.type) && !h.noQuote);
+  const keyed = !!(state.settings.apiKey || state.settings.tsxKey);
+  const avOnes = stocks.filter(viaAv), fhOnes = stocks.filter(h => !viaAv(h));
+  const avEvery = Math.max(AUTO_MS, (MKT_SHUT - MKT_OPEN) * 60e3 / Math.max(1, Math.floor(AV_PER_DAY / Math.max(1, avOnes.length))));
+  const needFx = state.holdings.some(h => h.cur && h.cur !== base) && (!auto || since('fx') >= 6 * 3600e3);
+  const cryptos = state.holdings.filter(h => h.type === 'Crypto' && (!auto || since('crypto') >= AUTO_MS));
+  const look = !keyed ? [] : !auto ? stocks : [
+    ...(stocksDue(live.last.stocks, AUTO_MS) ? fhOnes : []),
+    ...(live.av.stop !== today && live.av.n + avOnes.length <= AV_PER_DAY && stocksDue(live.last.av, avEvery) ? avOnes : [])];
+  if (auto && !needFx && !cryptos.length && !look.length) return;
   refreshing = true;
   $('#refreshBtn').disabled = true;
-  $('#priceStatus').textContent = 'Updating…';
+  if (!auto) $('#priceStatus').textContent = 'Updating…';
   const failed = [];
-  let ok = 0, limitMsg = '';
-  const base = state.settings.currency;
-  if (state.holdings.some(h => h.cur && h.cur !== base)) {
-    try { await refreshFx(); } catch (e) { failed.push('exchange rates'); }
+  let ok = 0, limitMsg = '', avDone = 0, avStopped = false;
+  const setPrice = (h, p) => { h.price = p; h.updated = now; if (auto) live.p[h.id] = { price: p, at: now }; else delete live.p[h.id]; ok++; };
+  if (needFx) {
+    try { await refreshFx(); live.last.fx = now; if (auto) live.fx = state.fx; } catch (e) { failed.push('exchange rates'); }
   }
-  const cryptos = state.holdings.filter(h => h.type === 'Crypto');
   if (cryptos.length) {
+    live.last.crypto = now;
     try {
       const ids = [...new Set(cryptos.map(h => h.symbol.toLowerCase()))].join(',');
       const vs = [...new Set(cryptos.map(h => (h.cur || base).toLowerCase()))].join(',');
@@ -1298,34 +1363,44 @@ async function refreshPrices() {
       const j = await r.json();
       for (const h of cryptos) {
         const p = j[h.symbol.toLowerCase()] && j[h.symbol.toLowerCase()][(h.cur || base).toLowerCase()];
-        if (p) { h.price = p; h.updated = Date.now(); ok++; } else failed.push(h.symbol);
+        if (p) setPrice(h, p); else failed.push(h.symbol);
       }
     } catch (e) { failed.push(...cryptos.map(h => h.symbol)); }
   }
-  // CDRs trade in Canada under the US share's ticker but at a different price, so they keep the price
-  // from your statements; other holdings from a Canadian (CAD) statement are looked up on the TSX.
-  const skipped = state.holdings.filter(h => h.noQuote && h.type !== 'Cash');
-  const others = state.holdings.filter(h => !['Crypto', 'Other', 'Cash'].includes(h.type) && !h.noQuote);
-  const isTsx = h => h.accountNo && h.cur === 'CAD' && !/[.:]/.test(h.symbol);
-  const quoteSym = h => isTsx(h)
-    ? h.symbol + (state.settings.tsxKey || state.settings.priceProvider === 'alphavantage' ? '.TRT' : '.TO') : h.symbol;
-  if (others.length) {
-    if (!state.settings.apiKey && !state.settings.tsxKey) {
-      limitMsg = 'Add a free API key in Settings to update stock prices.';
-    } else {
-      for (const h of others) {
-        if (!state.settings.apiKey && !isTsx(h)) { failed.push(h.symbol); continue; }
-        try {
-          const p = await fetchQuote(quoteSym(h), isTsx(h));
-          if (p) { h.price = p; h.updated = Date.now(); ok++; } else failed.push(h.symbol);
-        } catch (e) { failed.push(h.symbol); if (/limit/i.test(e.message)) { limitMsg = 'Alpha Vantage daily/minute limit reached.'; break; } }
+  if (stocks.length && !keyed) limitMsg = 'Add a free API key in Settings to update stock prices.';
+  if (look.some(h => !viaAv(h))) live.last.stocks = now;
+  if (look.some(viaAv)) live.last.av = now;
+  for (const h of look) {
+    if (!state.settings.apiKey && !isTsx(h)) { failed.push(h.symbol); continue; }
+    const av = viaAv(h);
+    if (av && avStopped) { failed.push(h.symbol); continue; }
+    if (av) { if (avDone && avOnes.length > 5) await sleep(12500); avDone++; live.av.n++; } // 5 a minute at most
+    try {
+      const p = await fetchQuote(quoteSym(h), isTsx(h));
+      if (p) setPrice(h, p); else failed.push(h.symbol);
+    } catch (e) {
+      failed.push(h.symbol);
+      if (/limit/i.test(e.message)) {
+        avStopped = true;
+        limitMsg = 'Alpha Vantage limit reached.';
+        if (/per day|daily/i.test(e.message)) live.av.stop = today; // no more automatic tries today
       }
     }
   }
-  state.pricesUpdated = Date.now();
-  save();
   refreshing = false;
   $('#refreshBtn').disabled = false;
+  if (auto) {
+    if (ok) live.at = now;
+    keepLive();
+    if (!ok) { priceStatus(); return; }
+    // not while you are typing in the page (that would reset the box): right after
+    if (renamingAcct || (document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName) && document.activeElement.closest('main'))) liveRenderPending = true;
+    else render();
+    return;
+  }
+  state.pricesUpdated = now;
+  keepLive();
+  save();
   render();
   const parts = [];
   if (ok) parts.push(`Updated ${ok} price${ok > 1 ? 's' : ''}.`);
@@ -1333,6 +1408,20 @@ async function refreshPrices() {
   if (limitMsg) parts.push(limitMsg);
   if (skipped.length) parts.push(`${[...new Set(skipped.map(h => h.symbol))].join(', ')} (CDR) keep the price from your statement.`);
   toast(parts.join(' ') || 'Nothing to update', !!failed.length && !ok, 6000);
+}
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (!liveRenderPending || renamingAcct || (document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName))) return;
+  liveRenderPending = false; render();
+}, 0));
+function autoPrices() {
+  if (state.settings.autoPrices === false || document.visibilityState !== 'visible' || !navigator.onLine || refreshing) return;
+  refreshPrices(true).catch(() => { refreshing = false; });
+}
+// "Prices updated 10:45 · automatic every 15 min"
+function priceStatus() {
+  const at = Math.max(state.pricesUpdated || 0, live.at || 0), auto = state.settings.autoPrices !== false;
+  const when = at ? new Date(at).toLocaleString(undefined, localISO(new Date(at)) === localISO() ? { timeStyle: 'short' } : { dateStyle: 'short', timeStyle: 'short' }) : '';
+  $('#priceStatus').textContent = (when ? 'Prices updated ' + when : '') + (auto && state.holdings.some(h => h.type !== 'Cash') ? `${when ? ' · ' : ''}automatic every 15 min${marketOpen() ? '' : ' (markets closed)'}` : '');
 }
 
 /* =========================================================
@@ -1374,6 +1463,7 @@ function showTab(tab) {
   render();
 }
 function render() {
+  applyLive(); // the prices updated on this device since your data was saved
   ({ dashboard: renderDashboard, transactions: renderTransactions, investments: renderInvestments, networth: renderNetworth, settings: renderSettings })[currentTab]();
 }
 
@@ -1761,7 +1851,7 @@ function renderInvestments() {
       ? kpi(`Dividends ${yr}`, money(div), intr ? `plus ${money(intr)} interest` : 'Received so far this year') +
         (contribs.length ? kpi(`Contributions ${yr}`, money(sum(contribs, a => inBase(a.contrib, a.cur))), contribs.map(a => `${esc(acctName(a.no))} ${money(a.contrib, a.cur)}`).join(' · ')) : '')
       : kpi('Holdings', String(state.holdings.length)));
-  $('#priceStatus').textContent = state.pricesUpdated ? 'Prices updated ' + new Date(state.pricesUpdated).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '';
+  priceStatus();
 
   // Holdings, grouped by account when some come from statements (by-hand ones go last). Accounts
   // with nothing in them on their latest statement still show, so you can see they were imported.
@@ -2174,6 +2264,7 @@ function renderSettings() {
   $('#sProvider').value = s.priceProvider;
   $('#sApiKey').value = s.apiKey;
   $('#sTsxKey').value = s.tsxKey || '';
+  $('#sAutoPrices').checked = s.autoPrices !== false;
   renderCategories();
 }
 // Settings › Categories: every category of each type, with ✎ to rename it (✕ to delete one of yours,
@@ -4444,6 +4535,11 @@ $('#sDateOrder').addEventListener('change', e => { state.settings.dateOrder = e.
 $('#sProvider').addEventListener('change', e => { state.settings.priceProvider = e.target.value; save(); });
 $('#sApiKey').addEventListener('change', e => { state.settings.apiKey = e.target.value.trim(); save(); toast('API key saved'); });
 $('#sTsxKey').addEventListener('change', e => { state.settings.tsxKey = e.target.value.trim(); save(); toast('Alpha Vantage key saved'); });
+$('#sAutoPrices').addEventListener('change', e => {
+  state.settings.autoPrices = e.target.checked; save();
+  toast(e.target.checked ? 'Prices update by themselves while the app is open' : 'Prices only update when you press Refresh prices');
+  autoPrices();
+});
 
 try {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
@@ -4453,7 +4549,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.32 (rename any category)';
+const APP_VERSION = '1.33 (prices update by themselves)';
 $('#appVersion').textContent = APP_VERSION;
 // a newer version published while the app is open: offer a reload rather than reloading by itself
 let updChecked = 0;
@@ -4484,6 +4580,11 @@ if (migrated.length) toast(migrated.join('. ') + '.', false, 8000);
 if (!window.Chart) toast('Charts could not load. Check your internet connection. Everything else works.', true, 6000);
 syncStart(msBack);
 setTimeout(checkUpdate, 3000);
+// prices: looked at every minute, updated when due (see refreshPrices)
+setTimeout(autoPrices, 5000);
+setInterval(autoPrices, 60e3);
+document.addEventListener('visibilitychange', autoPrices);
+window.addEventListener('online', autoPrices);
 document.addEventListener('visibilitychange', checkUpdate);
 window.addEventListener('focus', checkUpdate);
 setInterval(checkUpdate, 900000);
