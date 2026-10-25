@@ -39,6 +39,11 @@
 html,body{margin:0}
 body{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
 header{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:20px;padding:0 20px;min-height:56px}
+/* iPhone home-screen app: the page starts under the status bar (clock, battery), so the header grows
+   by its height (zero everywhere else). That strip stays dark grey: the status bar's text is white. */
+header{padding-top:env(safe-area-inset-top);padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right));
+  min-height:calc(56px + env(safe-area-inset-top));background:linear-gradient(#2a2a2a env(safe-area-inset-top),var(--surface) env(safe-area-inset-top))}
+main{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
 .brand{font-weight:700;font-size:16px;white-space:nowrap;display:flex;align-items:center;gap:8px}
 .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
 nav{display:flex;gap:4px;overflow-x:auto}
@@ -112,6 +117,12 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
 .welcome p{color:var(--muted);max-width:520px;margin:8px auto 18px}
 .hint{color:var(--muted);font-size:12px;margin:4px 0 12px}
 dialog{border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);padding:0;width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
+/* the visible height (100vh is taller than the screen in Safari while its bars show) minus the
+   iPhone's status bar and home bar; the body scrolls, the title and the buttons stay in view */
+dialog{max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+dialog[open]{display:flex;flex-direction:column}
+dialog>form{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.dlg-body{flex:1 1 auto;min-height:0}
 dialog.wide{width:min(1150px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 .dlg-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
@@ -129,8 +140,6 @@ label.field input,label.field select{color:var(--text);font-size:14px}
 .imp-table tr.off td{opacity:.45}
 .imp-table .flag{font-size:11px;color:var(--warn);white-space:nowrap}
 /* statement check: lists that fit a phone as well as a computer */
-#chkDlg[open]{display:flex;flex-direction:column}
-#chkDlg .dlg-body{flex:1 1 auto;min-height:0}
 .chk-note{background:var(--surface2);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px}
 .chk-st+.chk-st{margin-top:22px;padding-top:16px;border-top:1px solid var(--border)}
 .chk-st>h3{margin:0 0 10px;font-size:16px}
@@ -156,7 +165,13 @@ tr.acct-row td{background:var(--surface2);padding-top:7px;padding-bottom:7px}
 .acct-meta{font-size:12px}
 tr.acct-row.fold{cursor:pointer}
 tr.acct-row.fold:hover td{background:var(--border)}
-.fold-btn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.fold-btn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-align:left}
+.acct-line{display:flex;align-items:center;gap:6px}
+.acct-line .fold-btn{flex:1;min-width:0}
+.acct-tools{display:flex;flex:none}
+.acct-sum{margin:4px 0 0 24px;font-size:13px;font-variant-numeric:tabular-nums}
+tr.tap{cursor:pointer}
+tr.tap:active td{background:var(--surface2)}
 input.acct-rename{width:min(260px,100%);padding:3px 8px;font-weight:700;margin:0 8px 0 6px}
 .fold-btn .chev{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;color:var(--text);transition:transform .15s}
 .fold-btn[aria-expanded="false"] .chev{transform:rotate(-90deg)}
@@ -169,6 +184,14 @@ tr.acct-row.fold:hover .chev{background:var(--surface2)}
 .list-row.click:hover .name{color:var(--accent)}
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px}
 .settings-grid .card label.field{margin-bottom:12px}
+.cat-group+.cat-group{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+.cat-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.chip.cat-own{display:inline-flex;align-items:center;gap:2px;padding:2px 4px 2px 10px;font-size:13px;color:var(--text);background:var(--accent-soft)}
+.chip-btn{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;padding:2px 6px;border-radius:99px}
+.chip-btn:hover{background:var(--surface);color:var(--text)}
+.cat-add{display:flex;gap:6px}
+.cat-add input{flex:1}
+.cat-built{margin:6px 0 0}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13px;z-index:100;max-width:calc(100vw - 32px);box-shadow:0 6px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 .toast.err{background:var(--neg);color:#fff}
@@ -244,7 +267,9 @@ nav button .nav-ico,nav button .lbl-s{display:none}
 /* phone: a slim header, the tabs as a bar of icons at the bottom, tables cut down to what matters */
 .m-only{display:none}
 @media (max-width:700px){
-  header{gap:10px;padding:8px 14px;min-height:48px}
+  header{gap:10px;padding:calc(8px + env(safe-area-inset-top)) 14px 8px;min-height:calc(48px + env(safe-area-inset-top))}
+  /* text boxes under 16px make an iPhone zoom in when one is tapped, pushing the page off screen */
+  input,select,textarea,label.field input,label.field select,.imp-table input,.imp-table select{font-size:16px}
   nav#nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;
     padding:5px 6px calc(5px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border);overflow:visible}
   nav#nav button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;font-size:11px;line-height:1.15}
@@ -270,6 +295,10 @@ nav button .nav-ico,nav button .lbl-s{display:none}
   .kpi .value{font-size:18px}
   .chk-row{grid-template-columns:minmax(0,1fr) auto}
   .chk-act{grid-column:1/-1}
+  /* spending by category: the name gets the room, its bar goes underneath */
+  .cat-row{grid-template-columns:minmax(0,1fr) auto 52px;grid-template-areas:"name amt chg" "bar bar bar";row-gap:6px}
+  .cat-row .cat-name{grid-area:name} .cat-row .bar{grid-area:bar} .cat-row .amt{grid-area:amt} .cat-row .chg{grid-area:chg}
+  .chip-btn{font-size:14px;padding:5px 9px}
 }
 </style>
 </head>
@@ -381,7 +410,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
         <div class="card-head"><h3>History</h3><span class="hint" id="ihCount"></span></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Date</th><th class="m-hide">Account</th><th class="m-hide">Type</th><th>Security</th><th class="num m-hide">Quantity</th><th class="num m-hide">Price</th><th class="num">Amount</th><th class="num m-hide" title="Sale price minus what the shares sold had cost">Realized gain</th><th class="m-hide"></th></tr></thead>
+            <thead><tr><th>Date</th><th class="m-hide">Account</th><th class="m-hide">Type</th><th>Security</th><th class="num m-hide">Quantity</th><th class="num m-hide">Price</th><th class="num">Amount</th><th class="num m-hide" title="Sale price minus what the shares sold had cost">Realized gain</th><th></th></tr></thead>
             <tbody id="ihBody"></tbody>
           </table>
         </div>
@@ -470,6 +499,11 @@ nav button .nav-ico,nav button .lbl-s{display:none}
         </label>
       </div>
       <div class="card">
+        <h3>Categories</h3>
+        <p class="hint" style="margin-top:0">Add your own next to the built-in ones. You can also add one while editing a transaction (<b>+ New category…</b> at the end of the list). Renaming one renames it on its transactions too.</p>
+        <div id="catBody"></div>
+      </div>
+      <div class="card">
         <h3>Live prices</h3>
         <p class="hint" style="margin-top:0">Crypto prices (CoinGecko) and exchange rates work without a key. For stocks and ETFs, get a free API key from <b>finnhub.io</b> (US stocks) or <b>alphavantage.co</b> (more exchanges, 25 requests/day) and paste it here. You can always type prices in by hand instead.</p>
         <label class="field">Stock price provider
@@ -518,7 +552,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       <label class="field">Category<select name="category"></select></label>
       <label class="span2 inline hidden" id="txSimilarWrap" style="color:var(--text)"><input type="checkbox" name="similar" checked> <span id="txSimilarText"></span></label>
     </div>
-    <div class="dlg-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+    <div class="dlg-foot"><button type="button" class="btn danger hidden" id="txDel" data-act="del-tx-dlg" style="margin-right:auto">Delete</button><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
   </form>
 </dialog>
 
@@ -538,7 +572,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       <label class="field">Current price (per unit)<input type="number" name="price" step="any" min="0" required></label>
       <p class="hint span2" id="hHint" style="margin:0"></p>
     </div>
-    <div class="dlg-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+    <div class="dlg-foot"><button type="button" class="btn danger hidden" id="hDel" data-act="del-holding-dlg" style="margin-right:auto">Delete</button><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
   </form>
 </dialog>
 
@@ -707,7 +741,51 @@ const CATS = {
 };
 // "Moved to savings" is net: money put into savings/investments minus money taken back out
 const SAV_IN = new Set(['To savings', 'To investments']), SAV_OUT = new Set(['From savings', 'From investments']);
-const catsFor = type => CATS[type] || CATS.expense;
+// where the transactions of a deleted category go
+const FALLBACK_CAT = { expense: 'Other', income: 'Other income', transfer: 'Between accounts' };
+// your own categories (state.customCats, by type) come after the built-in ones, before the catch-all
+// "Other" / "Other income"
+const myCats = type => (state.customCats && state.customCats[type]) || [];
+const catsFor = type => {
+  const base = CATS[type] || CATS.expense, own = myCats(type).filter(c => !base.includes(c)), last = base[base.length - 1];
+  return /^Other/.test(last) ? [...base.slice(0, -1), ...own, last] : [...base, ...own];
+};
+const cleanCat = s => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+// adds a category (or finds the one already there with that name); returns its name, or null
+function addCategory(type, name) {
+  name = cleanCat(name);
+  if (!name) return null;
+  const have = catsFor(type).find(c => normalize(c) === normalize(name));
+  if (have) return have;
+  state.customCats = { ...(state.customCats || {}) };
+  state.customCats[type] = [...myCats(type), name];
+  save();
+  return name;
+}
+// asks for a new category's name (the "+ New category…" choice of a list)
+function promptCategory(type) {
+  return addCategory(type, prompt(`Name of the new ${type} category:`, ''));
+}
+function renameCategory(type, from) {
+  const to = cleanCat(prompt(`Rename the "${from}" category to:`, from));
+  if (!to || to === from) return;
+  if (catsFor(type).some(c => c !== from && normalize(c) === normalize(to))) { toast(`There is already a "${to}" category`, true); return; }
+  state.customCats[type] = myCats(type).map(c => c === from ? to : c);
+  let n = 0;
+  for (const t of state.transactions) if (t.type === type && t.category === from) { t.category = to; n++; }
+  for (const k of Object.keys(state.rules)) if (k.startsWith(type + '|') && state.rules[k] === from) state.rules[k] = to;
+  save(); render();
+  toast(`Renamed to "${to}"${n ? ` (${n} transaction${n === 1 ? '' : 's'})` : ''}`);
+}
+function deleteCategory(type, name) {
+  const to = FALLBACK_CAT[type], n = state.transactions.filter(t => t.type === type && t.category === name).length;
+  if (!confirm(n ? `Delete the "${name}" category? Its ${n} transaction${n === 1 ? '' : 's'} move to "${to}".` : `Delete the "${name}" category?`)) return;
+  state.customCats[type] = myCats(type).filter(c => c !== name);
+  for (const t of state.transactions) if (t.type === type && t.category === name) t.category = to;
+  for (const k of Object.keys(state.rules)) if (k.startsWith(type + '|') && state.rules[k] === name) delete state.rules[k];
+  save(); render();
+  toast(`Category deleted${n ? `: ${n} transaction${n === 1 ? '' : 's'} moved to "${to}"` : ''}`);
+}
 
 const KEYWORDS = {
   expense: {
@@ -803,6 +881,7 @@ function defaultState() {
     version: 1,
     settings: { currency: cur, theme: 'auto', dateOrder: 'DMY', priceProvider: 'finnhub', apiKey: '' },
     transactions: [], holdings: [], accounts: [], goals: [], snapshots: [], rules: {},
+    customCats: { expense: [], income: [], transfer: [] }, // categories you added
     // from imported investment statements: each account's latest figures (by account number),
     // the portfolio's value at each statement date, and the activity lines (dividends, buys…)
     invAccounts: {}, invHistory: [], invActivity: [], acctNames: {},
@@ -1705,18 +1784,20 @@ function drawHoldings(groups, keys, grouped, value, base) {
   $$('#hHead th[data-by]').forEach(th => { th.classList.toggle('sorted', th.dataset.by === sort.by || (sort.by === 'gainPct' && th.dataset.by === 'gain')); th.dataset.dir = sort.dir > 0 ? 'asc' : 'desc'; });
   const weight = v => value > 0 ? `<div class="muted" style="font-size:11px">${(v / value * 100).toFixed(1)}%</div>` : '';
   const actions = h => `<td class="num m-hide" style="white-space:nowrap"><button class="icon-btn" data-act="edit-holding" data-id="${h.id}" title="Edit">✎</button><button class="icon-btn" data-act="del-holding" data-id="${h.id}" title="Delete">✕</button></td>`;
+  // on a phone (no room for ✎ ✕) a holding opens for editing when tapped
+  const tap = h => PHONE.matches ? ` class="tap" data-act="edit-holding" data-id="${h.id}"` : '';
   const hRow = h => {
     const v = hValue(h), c = hCost(h), g = v - c;
     const cur = h.cur || base;
     const noFx = cur !== base && fxRate(cur) == null;
     const fxWarn = noFx ? `<div class="warn" style="font-size:11px" title="Exchange rate not loaded yet: press Refresh prices">⚠ no ${esc(cur)} rate</div>` : '';
-    if (h.type === 'Cash') return `<tr>
+    if (h.type === 'Cash') return `<tr${tap(h)}>
       <td><div style="font-weight:600">Cash</div><div class="muted" style="font-size:12px">${cur !== base ? money(h.shares, cur) : 'Not invested yet'}</div></td>
       <td class="m-hide"><span class="chip">Cash</span></td><td class="num muted m-hide">–</td><td class="num muted m-hide">–</td><td class="num muted m-hide">–</td>
       <td class="num">${money(v)}${fxWarn || weight(v)}</td><td class="num muted">–</td>${actions(h)}
     </tr>`;
     const qty = (+h.shares).toLocaleString(undefined, { maximumFractionDigits: 8 });
-    return `<tr>
+    return `<tr${tap(h)}>
       <td><div style="font-weight:600">${esc(h.symbol.toUpperCase())}</div><div class="muted" style="font-size:12px">${esc(h.name || '')}</div>
         <div class="m-only muted" style="font-size:11px">${qty} × ${priceFmt(h.price, cur)}</div></td>
       <td class="m-hide"><span class="chip">${esc(h.type)}</span></td>
@@ -1741,14 +1822,20 @@ function drawHoldings(groups, keys, grouped, value, base) {
     const meta = (!k ? 'added by hand' : a ? `${esc(k)} · ${esc(a.broker)}${a.cur !== base ? ` · ${esc(a.cur)} account` : ''} · statement of ${dateLabel(a.asOf)}` : esc(k))
       + (state.acctNames[k] && k ? ` · “${esc(defaultAcctName(k))}” on the statements` : '') + (open ? '' : ` · ${what}`);
     const chev = `<span class="chev"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
-    // (on a phone the four columns after the name are hidden: the name cell spans one column, not five)
+    const tools = `<button class="icon-btn" data-act="rename-acct" data-id="${esc(k)}" title="Rename this account">✎</button>${k ? `<button class="icon-btn" data-act="del-inv-account" data-id="${esc(k)}" title="Remove this account and its holdings">✕</button>` : ''}`;
+    // a phone shows three columns: the account's name, its rename / remove buttons, then its value and
+    // gain fill the whole row, one under the other
+    if (PHONE.matches) return `<tr class="acct-row fold" data-act="fold-acct" data-id="${esc(k)}"><td colspan="3">${renamingAcct === k
+      ? `<span class="fold-btn" aria-hidden="true">${chev}</span>${nameCell(k)}`
+      : `<div class="acct-line"><button class="fold-btn" aria-expanded="${open}" title="${open ? 'Fold' : 'Unfold'} this account">${chev}<span class="acct-name">${esc(acctName(k))}</span></button><span class="acct-tools">${tools}</span></div><span class="muted acct-meta">${meta}</span>`}
+      <div class="acct-sum"><b>${money(gv)}</b>${onlyCash ? '' : ` · <span class="${signCls(g)}">${money(g)}${gc ? ` (${pct(g / gc)})` : ''}</span>`}</div></td></tr>`;
     return `<tr class="acct-row fold" data-act="fold-acct" data-id="${esc(k)}">
-      <td colspan="${PHONE.matches ? 1 : 5}">${renamingAcct === k
+      <td colspan="5">${renamingAcct === k
         ? `<span class="fold-btn" aria-hidden="true">${chev}</span>${nameCell(k)}`
         : `<button class="fold-btn" aria-expanded="${open}" title="${open ? 'Fold' : 'Unfold'} this account">${chev}<span class="acct-name">${esc(acctName(k))}</span></button><span class="muted acct-meta">${meta}</span>`}</td>
       <td class="num"><b>${money(gv)}</b></td>
       ${onlyCash ? '<td class="num muted">–</td>' : `<td class="num ${signCls(g)}">${money(g)}<div style="font-size:12px">${gc ? pct(g / gc) : ''}</div></td>`}
-      <td class="num m-hide" style="white-space:nowrap"><button class="icon-btn" data-act="rename-acct" data-id="${esc(k)}" title="Rename this account">✎</button>${k ? `<button class="icon-btn" data-act="del-inv-account" data-id="${esc(k)}" title="Remove this account and its holdings">✕</button>` : ''}</td>
+      <td class="num" style="white-space:nowrap">${tools}</td>
     </tr>`;
   };
   const emptyRow = k => `<tr><td colspan="8" class="muted" style="font-size:13px">No holdings or cash in this account on the statement of ${dateLabel(state.invAccounts[k].asOf)}.</td></tr>`;
@@ -1992,7 +2079,7 @@ function renderInvHistory() {
       <td class="num m-hide">${x.price ? priceFmt(x.price, x.cur) : ''}</td>
       <td class="num ${t.cls}">${money(x.amount, x.cur)}</td>
       <td class="num m-hide ${g == null ? 'muted' : signCls(g)}">${gainCell}</td>
-      <td class="num m-hide"><button class="icon-btn" data-act="del-inv-act" data-id="${esc(x.id)}" title="Delete this line">✕</button></td>
+      <td class="num"><button class="icon-btn" data-act="del-inv-act" data-id="${esc(x.id)}" title="Delete this line">✕</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="9" class="muted" style="text-align:center;padding:28px">${all.length ? 'Nothing matches these filters.' : 'No history yet. Import your Disnat and Wealthsimple statements: their purchases, sales, dividends and tax withheld are listed here, month after month.'}</td></tr>`;
 }
@@ -2062,7 +2149,32 @@ function renderSettings() {
   $('#sProvider').value = s.priceProvider;
   $('#sApiKey').value = s.apiKey;
   $('#sTsxKey').value = s.tsxKey || '';
+  renderCategories();
 }
+// Settings › Categories: yours (rename, delete) and an Add box for each type, the built-in ones listed
+function renderCategories() {
+  const groups = [['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers (not counted as income or expenses)']];
+  $('#catBody').innerHTML = groups.map(([type, label]) => {
+    const own = myCats(type), uses = c => state.transactions.filter(t => t.type === type && t.category === c).length;
+    return `<div class="cat-group">
+      <div class="sub-h">${label}</div>
+      <div class="cat-chips">${own.length ? own.map(c => `<span class="chip cat-own" title="${uses(c)} transaction${uses(c) === 1 ? '' : 's'}">${esc(c)}<button class="chip-btn" data-act="cat-rename" data-type="${type}" data-name="${esc(c)}" title="Rename" aria-label="Rename ${esc(c)}">✎</button><button class="chip-btn" data-act="cat-del" data-type="${type}" data-name="${esc(c)}" title="Delete" aria-label="Delete ${esc(c)}">✕</button></span>`).join('') : '<span class="muted" style="font-size:13px">None of your own yet</span>'}</div>
+      <form class="cat-add" data-type="${type}"><input name="name" maxlength="40" placeholder="New ${type} category" autocomplete="off"><button class="btn sm">Add</button></form>
+      <div class="hint cat-built">Built-in: ${CATS[type].map(esc).join(', ')}</div>
+    </div>`;
+  }).join('');
+}
+$('#catBody').addEventListener('submit', e => {
+  e.preventDefault();
+  const form = e.target, type = form.dataset.type, raw = cleanCat(form.name.value);
+  if (!raw) return;
+  const had = catsFor(type).find(c => normalize(c) === normalize(raw));
+  if (had) { toast(`"${had}" is already a category`, true); return; }
+  addCategory(type, raw); render();
+  toast(`Added the "${raw}" category`);
+  const again = $(`#catBody form[data-type="${type}"] input`);
+  if (again) again.focus();
+});
 function applyTheme() {
   const t = state.settings.theme;
   if (t === 'auto') document.documentElement.removeAttribute('data-theme');
@@ -2073,8 +2185,12 @@ function applyTheme() {
    Dialogs: add / edit
    ========================================================= */
 function openDlg(id) { const d = document.getElementById(id); d.showModal(); return d; }
+// a category list, with "+ New category…" at the end
+const NEW_CAT = '__new';
+const catOptions = (type, value) => catsFor(type).map(c => `<option${c === value ? ' selected' : ''}>${esc(c)}</option>`).join('') + `<option value="${NEW_CAT}">+ New category…</option>`;
 function fillCatSelect(sel, type, value) {
-  sel.innerHTML = catsFor(type).map(c => `<option${c === value ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  sel.innerHTML = catOptions(type, value);
+  sel.dataset.prev = sel.value;
 }
 let editTxId = null, txCatTouched = false;
 function openTx(id) {
@@ -2082,6 +2198,7 @@ function openTx(id) {
   const t = id ? state.transactions.find(x => x.id === id) : null;
   const f = $('#txForm');
   $('#txTitle').textContent = t ? 'Edit transaction' : 'Add transaction';
+  $('#txDel').classList.toggle('hidden', !t);
   f.type.value = t ? t.type : 'expense';
   f.date.value = t ? t.date : localISO();
   f.desc.value = t ? t.desc : '';
@@ -2106,7 +2223,16 @@ function updateSimilar() {
   if (others.length) $('#txSimilarText').textContent = `Also put the ${others.length} other "${merchantKey(f.desc.value).toUpperCase()}" transaction${others.length === 1 ? '' : 's'} in ${f.category.value}`;
 }
 $('#txForm').type.addEventListener('change', e => { const f = $('#txForm'); fillCatSelect(f.category, f.type.value, guessCategory(f.desc.value, f.type.value)); updateSimilar(); });
-$('#txForm').category.addEventListener('change', () => { txCatTouched = true; updateSimilar(); });
+$('#txForm').category.addEventListener('change', e => {
+  const sel = e.target, f = $('#txForm');
+  if (sel.value === NEW_CAT) {
+    const name = promptCategory(f.type.value);
+    fillCatSelect(sel, f.type.value, name || sel.dataset.prev);
+    if (!name) return;
+  }
+  sel.dataset.prev = sel.value;
+  txCatTouched = true; updateSimilar();
+});
 $('#txForm').desc.addEventListener('change', () => {
   const f = $('#txForm');
   if (txCatTouched) return;
@@ -2153,6 +2279,7 @@ function openHolding(id) {
   const h = id ? state.holdings.find(x => x.id === id) : null;
   const f = $('#hForm');
   $('#hTitle').textContent = h ? 'Edit holding' : 'Add holding';
+  $('#hDel').classList.toggle('hidden', !h);
   const cur = h ? (h.cur || state.settings.currency) : state.settings.currency;
   f.cur.innerHTML = CURRENCIES.map(c => `<option${c === cur ? ' selected' : ''}>${c}</option>`).join('');
   f.type.value = h ? h.type : 'Stock';
@@ -3665,7 +3792,7 @@ function renderImportRows() {
       <td><input data-i="${i}" data-f="desc" value="${esc(r.desc)}"></td>
       <td><input type="number" step="0.01" min="0" data-i="${i}" data-f="amount" value="${r.amount}" style="text-align:right"></td>
       <td><select data-i="${i}" data-f="type">${['expense', 'income', 'transfer'].map(t => `<option value="${t}"${r.type === t ? ' selected' : ''}>${t[0].toUpperCase() + t.slice(1)}</option>`).join('')}</select></td>
-      <td><select data-i="${i}" data-f="category">${catsFor(r.type).map(c => `<option${c === r.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></td>
+      <td><select data-i="${i}" data-f="category">${catOptions(r.type, r.category)}</select></td>
       <td class="flag">${esc(r.flag || '')}</td>
     </tr>`).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">No transactions found. Check the column choices above.</td></tr>';
   updateImportSummary();
@@ -3685,10 +3812,15 @@ $('#impBody').addEventListener('change', e => {
   else if (f === 'amount') r.amount = round2(Math.abs(+el.value || 0));
   else if (f === 'type') { r.type = el.value; r.category = guessCategory(r.desc, r.type); renderImportRows(); return; }
   else if (f === 'category') {
+    let added = false;
+    if (el.value === NEW_CAT) { const name = promptCategory(r.type); if (!name) { el.value = r.category; return; } el.innerHTML = catOptions(r.type, name); added = true; }
     r.category = el.value; r.catTouched = true;
     // apply the same category to other unchanged lines from the same merchant
     const key = merchantKey(r.desc);
-    if (key) { let n = 0; importRows.forEach(o => { if (o !== r && !o.catTouched && o.type === r.type && merchantKey(o.desc) === key) { o.category = r.category; n++; } }); if (n) { renderImportRows(); toast(`Also applied to ${n} similar line${n > 1 ? 's' : ''}`); } }
+    let n = 0;
+    if (key) importRows.forEach(o => { if (o !== r && !o.catTouched && o.type === r.type && merchantKey(o.desc) === key) { o.category = r.category; n++; } });
+    if (n || added) renderImportRows(); // the other lines' lists get the new category too
+    if (n) toast(`Also applied to ${n} similar line${n > 1 ? 's' : ''}`);
   }
   else r[f] = el.value;
   updateImportSummary();
@@ -4087,10 +4219,18 @@ document.addEventListener('click', e => {
       break;
     }
     case 'chk-import': { const st = chk && chk.inv[+el.dataset.i]; if (!st) break; $('#chkDlg').close(); openInvImport([st]); break; }
+    case 'cat-rename': renameCategory(el.dataset.type, el.dataset.name); break;
+    case 'cat-del': deleteCategory(el.dataset.type, el.dataset.name); break;
     case 'add-tx': openTx(); break;
     case 'edit-tx': openTx(id); break;
     case 'del-tx':
       if (confirm('Delete this transaction?')) { state.transactions = state.transactions.filter(t => t.id !== id); selected.delete(id); save(); render(); renderCheck(); }
+      break;
+    case 'del-tx-dlg': // the Delete button of the edit dialog (the only one on a phone)
+      if (editTxId && confirm('Delete this transaction?')) { state.transactions = state.transactions.filter(t => t.id !== editTxId); selected.delete(editTxId); save(); $('#txDlg').close(); render(); renderCheck(); toast('Transaction deleted'); }
+      break;
+    case 'del-holding-dlg':
+      if (editHId && confirm('Delete this holding?')) { state.holdings = state.holdings.filter(h => h.id !== editHId); save(); $('#hDlg').close(); render(); toast('Holding deleted'); }
       break;
     case 'del-selected':
       if (confirm(`Delete ${selected.size} selected transactions?`)) { state.transactions = state.transactions.filter(t => !selected.has(t.id)); selected.clear(); save(); render(); }
@@ -4277,7 +4417,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.30 (new versions show at once)';
+const APP_VERSION = '1.31 (your own categories, iPhone fixes)';
 $('#appVersion').textContent = APP_VERSION;
 // a newer version published while the app is open: offer a reload rather than reloading by itself
 let updChecked = 0;
