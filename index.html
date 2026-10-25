@@ -111,8 +111,6 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
 .list-row .name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .list-row .meta{font-size:12px;color:var(--muted)}
 .list-row .amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
-.progress{height:8px;background:var(--surface2);border-radius:99px;overflow:hidden;margin-top:6px}
-.progress>div{height:100%;background:var(--accent);border-radius:99px}
 .welcome{text-align:center;padding:36px 20px}
 .welcome p{color:var(--muted);max-width:520px;margin:8px auto 18px}
 .hint{color:var(--muted);font-size:12px;margin:4px 0 12px}
@@ -221,8 +219,8 @@ tr.acct-row.fold:hover .chev{background:var(--surface2)}
 .month-pills button.active{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .month-pills button.active::after{background:var(--on-accent)}
 .month-pills button:disabled{opacity:.35;cursor:default}
-#kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
-@media (max-width:1150px){ #kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+#kpis,#nwKpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+@media (max-width:1150px){ #kpis,#nwKpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
 .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .card-head h3{margin:0}
 .card-head .hint{margin:0}
@@ -235,6 +233,12 @@ tr.acct-row.fold:hover .chev{background:var(--surface2)}
 .bar>div{height:100%;border-radius:99px}
 .cat-row .amt{font-variant-numeric:tabular-nums;font-weight:600;text-align:right;white-space:nowrap}
 .cat-row .chg{font-size:12px;text-align:right;white-space:nowrap}
+/* the same rows where nothing opens (net worth breakdown), with room for "Savings 2 accounts" */
+.cat-row.static{cursor:default}
+.cat-row.static:hover .cat-name{color:inherit}
+@media (min-width:701px){ #nwBreak .cat-row{grid-template-columns:minmax(130px,1.4fr) minmax(40px,1.2fr) auto 40px} }
+/* net worth: its four cards two by two on a wide screen, rather than three and one */
+@media (min-width:1000px){ #tab-networth .grid2{grid-template-columns:repeat(2,minmax(0,1fr))} }
 /* Dashboard uses the full window width; on big enough screens it fits the window height
    too (no page scroll): charts stretch to fill their card and long lists scroll inside it. */
 main.fit{max-width:none}
@@ -290,7 +294,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
   .period-tools{flex:1 1 100%;justify-content:center;flex-wrap:wrap;gap:6px;margin:0}
   .period-tools .seg button{padding:7px 11px}
   .period-title{min-width:0;flex:1}
-  .kpis,#kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpis,#kpis,#nwKpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .kpi{padding:12px}
   .kpi .value{font-size:18px}
   .chk-row{grid-template-columns:minmax(0,1fr) auto}
@@ -472,8 +476,8 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       </div>
       <div class="card"><h3>Net worth over time</h3><div class="chart"><canvas id="chNet"></canvas></div><p class="hint">A snapshot is saved automatically each month whenever you update your data.</p></div>
       <div class="card">
-        <div class="row-head" style="margin-bottom:4px"><h3 style="margin:0">Savings goals</h3><button class="btn sm" data-act="add-goal">+ Add goal</button></div>
-        <div id="goalList"></div>
+        <div class="card-head"><h3>Breakdown</h3><span class="hint" id="nwBreakHint"></span></div>
+        <div id="nwBreak"></div>
       </div>
     </div>
   </section>
@@ -586,21 +590,6 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       <label class="field span2">Name<input name="name" required placeholder="e.g. Livret A, Current account, Car loan"></label>
       <label class="field">Type<select name="type"></select></label>
       <label class="field"><span id="aBalLabel">Balance</span><input type="number" name="balance" step="0.01" required></label>
-    </div>
-    <div class="dlg-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
-  </form>
-</dialog>
-
-<!-- Goal dialog -->
-<dialog id="gDlg">
-  <form id="gForm">
-    <div class="dlg-head"><h3 id="gTitle">Add savings goal</h3></div>
-    <div class="dlg-body form-grid">
-      <label class="field span2">Goal<input name="name" required placeholder="e.g. Emergency fund, Holiday"></label>
-      <label class="field">Target amount<input type="number" name="target" step="0.01" min="0.01" required></label>
-      <label class="field">Target date (optional)<input type="date" name="deadline"></label>
-      <label class="field">Track with account<select name="account"></select></label>
-      <label class="field" id="gSavedWrap">Saved so far<input type="number" name="saved" step="0.01" min="0"></label>
     </div>
     <div class="dlg-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
   </form>
@@ -906,7 +895,7 @@ function defaultState() {
   return {
     version: 1,
     settings: { currency: cur, theme: 'auto', dateOrder: 'DMY', priceProvider: 'finnhub', apiKey: '', autoPrices: true },
-    transactions: [], holdings: [], accounts: [], goals: [], snapshots: [], rules: {},
+    transactions: [], holdings: [], accounts: [], snapshots: [], rules: {},
     customCats: { expense: [], income: [], transfer: [] }, // categories you added
     catLabels: { expense: {}, income: {}, transfer: {} }, // names you gave built-in categories
     // from imported investment statements: each account's latest figures (by account number),
@@ -1011,7 +1000,7 @@ const sync = { eTag: null, dirty: false, last: 0, ...(readJSON(SYNC_KEY) || {}),
 const keepAuth = () => { try { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); } catch {} };
 const keepSync = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify({ eTag: sync.eTag, dirty: sync.dirty, last: sync.last })); } catch {} };
 const syncOn = () => syncable() && !!auth.user;
-const hasData = s => !!s && ['transactions', 'holdings', 'accounts', 'goals', 'invActivity'].some(k => (s[k] || []).length);
+const hasData = s => !!s && ['transactions', 'holdings', 'accounts', 'invActivity'].some(k => (s[k] || []).length);
 
 // Sign-in with a code and a one-time proof (PKCE), the way for apps with no server of their own
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1467,8 +1456,8 @@ function render() {
   ({ dashboard: renderDashboard, transactions: renderTransactions, investments: renderInvestments, networth: renderNetworth, settings: renderSettings })[currentTab]();
 }
 
-function kpi(label, value, sub = '', cls = '') {
-  return `<div class="card kpi"><div class="label">${label}</div><div class="value ${cls}" title="${esc(value)}">${value}</div><div class="sub">${sub}</div></div>`;
+function kpi(label, value, sub = '', cls = '', tip = '') {
+  return `<div class="card kpi"${tip ? ` title="${esc(tip)}"` : ''}><div class="label">${label}</div><div class="value ${cls}" title="${esc(value)}">${value}</div><div class="sub">${sub}</div></div>`;
 }
 
 /* ---------- Period navigator (Dashboard and Income & expenses) ---------- */
@@ -2211,14 +2200,57 @@ function exportInvCsv() {
 /* ---------- Net worth ---------- */
 const ASSET_TYPES = ['Checking','Savings','Cash','Retirement','Property','Vehicle','Other asset'];
 const LIAB_TYPES = ['Mortgage','Loan','Credit card','Other debt'];
+// the accounts an emergency can be paid from straight away
+const CASH_TYPES = new Set(['Checking', 'Savings', 'Cash']);
+const monthsApart = (a, b) => { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + m2 - m1; };
+// a part of a whole: "12%", "<1%"
+const shareTxt = v => !isFinite(v) ? '–' : v > 0 && v < 0.005 ? '<1%' : (v * 100).toFixed(0) + '%';
+// spent a month on average over the 12 months before this one, counting the months that have
+// transactions (as the dashboard's 12-month average)
+function avgMonthlySpend() {
+  const past = [...Array(12)].map((_, i) => summarize(d => ym(d) === addMonths(curMonth(), -12 + i))).filter(s => s.n);
+  return past.length ? sum(past, s => s.exp) / past.length : null;
+}
 function renderNetworth() {
-  const t = totals();
-  const prevSnap = state.snapshots.filter(s => s.month < curMonth()).pop();
+  const t = totals(), cm = curMonth(), owned = t.assets + t.investments;
+  const plus = v => (v >= 0 ? '+' : '') + money(v);
+
+  // the change since the month before, and over the past 12 months (or since the first month saved
+  // when there are fewer), from the snapshot saved each month
+  const snaps = state.snapshots.filter(s => s.month < cm);
+  const prev = snaps[snaps.length - 1], yearAgo = addMonths(cm, -12), base = snaps.find(s => s.month >= yearAgo);
+  const netSub = prev ? `<span class="${signCls(t.net - prev.net)}">${plus(t.net - prev.net)}</span> since ${prev.month === addMonths(cm, -1) ? 'last month' : monthLabel(prev.month)}` : '&nbsp;';
+  let yearKpi;
+  if (base) {
+    const d = t.net - base.net, n = monthsApart(base.month, cm);
+    yearKpi = kpi(base.month === yearAgo ? 'Past 12 months' : `Since ${monthLabel(base.month)}`, plus(d),
+      (base.net > 0 ? pct(d / base.net) + ' · ' : '') + `avg ${plus(d / n)} a month`, signCls(d), 'How much your net worth changed, from the snapshot saved each month');
+  } else yearKpi = kpi('Past 12 months', '–', 'Fills in month by month', '', 'How much your net worth changed, from the snapshot saved each month');
+
+  // investments: their gain over what they cost, as on the Investments tab
+  const cost = sum(state.holdings, hCost), gain = t.investments - cost;
+  const holdingsLink = '<a href="#investments" data-act="go" data-tab="investments" style="color:var(--accent)">View holdings</a>';
+
+  // emergency fund: how many months of spending the bank accounts would cover
+  const cashAccts = state.accounts.filter(a => a.kind === 'asset' && CASH_TYPES.has(a.type));
+  const cash = sum(cashAccts, a => +a.balance || 0), spend = avgMonthlySpend();
+  const efTip = 'Your checking, savings and cash accounts, divided by what you spend in a month (average of the last 12 months). 3 to 6 months is the usual advice.';
+  let efKpi;
+  if (!cashAccts.length) efKpi = kpi('Emergency fund', '–', 'Add your bank accounts under Assets', '', efTip);
+  else if (!spend) efKpi = kpi('Emergency fund', '–', 'Needs your spending of the last 12 months', '', efTip);
+  else {
+    const n = Math.max(0, cash / spend);
+    efKpi = kpi('Emergency fund', `${n < 10 ? n.toFixed(1) : Math.round(n)} months`, `in cash &amp; savings<br>at ${money(spend)}/month`, n >= 3 ? 'pos' : 'warn', efTip);
+  }
+
   $('#nwKpis').innerHTML =
-    kpi('Net worth', money(t.net), prevSnap ? `<span class="${signCls(t.net - prevSnap.net)}">${t.net - prevSnap.net >= 0 ? '+' : ''}${money(t.net - prevSnap.net)}</span> since last month` : '&nbsp;', 'pos') +
+    kpi('Net worth', money(t.net), netSub, signCls(t.net)) +
+    yearKpi +
     kpi('Cash & assets', money(t.assets), `of which savings ${money(t.savings)}`) +
-    kpi('Investments', money(t.investments), `<a href="#investments" data-act="go" data-tab="investments" style="color:var(--accent)">View holdings</a>`) +
-    kpi('Debts', money(t.liabilities), '&nbsp;', t.liabilities ? 'neg' : '');
+    kpi('Investments', money(t.investments), (cost ? `<span class="${signCls(gain)}">${plus(gain)} (${pct(gain / cost)})</span> ${gain < 0 ? 'loss' : 'gain'}<br>` : '') + holdingsLink) +
+    kpi('Debts', money(t.liabilities), t.liabilities ? (owned > 0 ? `${shareTxt(t.liabilities / owned)} of what you own` : '&nbsp;') : 'No debts', t.liabilities ? 'neg' : '',
+      'Your debts as a share of everything you own (accounts and investments)') +
+    efKpi;
 
   const row = a => `<div class="list-row">
       <div class="grow"><div class="name">${esc(a.name)}</div><div class="meta">${esc(a.type)}${a.updated ? ' · updated ' + new Date(a.updated).toLocaleDateString() : ''}</div></div>
@@ -2235,24 +2267,30 @@ function renderNetworth() {
 
   netChart('chNet');
 
-  $('#goalList').innerHTML = state.goals.length ? state.goals.map(g => {
-    const acc = g.account && state.accounts.find(a => a.id === g.account);
-    const saved = acc ? +acc.balance : +g.saved || 0;
-    const p = Math.max(0, Math.min(1, saved / g.target));
-    let meta = `${money(saved)} of ${money(g.target)}`;
-    if (acc) meta += ` · tracks ${esc(acc.name)}`;
-    if (g.deadline && p < 1) {
-      const [y, mo] = g.deadline.split('-').map(Number), now = new Date();
-      const monthsLeft = (y - now.getFullYear()) * 12 + (mo - 1 - now.getMonth());
-      meta += monthsLeft > 0 ? ` · save ${money((g.target - saved) / monthsLeft)}/month to reach it by ${dateLabel(g.deadline)}` : ` · target date ${dateLabel(g.deadline)} passed`;
+  // what it is made of: the accounts by type and the investments, then the debts by type, each as a
+  // share of everything you own
+  const byType = kind => {
+    const g = {};
+    for (const a of state.accounts.filter(x => x.kind === kind)) {
+      const k = a.type || (kind === 'asset' ? 'Other asset' : 'Other debt');
+      (g[k] = g[k] || { name: k, n: 0, v: 0 }).n++;
+      g[k].v += kind === 'asset' ? +a.balance || 0 : Math.abs(+a.balance || 0);
     }
-    return `<div class="list-row"><div class="grow">
-        <div style="display:flex;justify-content:space-between;gap:8px"><span class="name">${esc(g.name)}</span><span class="amt">${(p * 100).toFixed(0)}%</span></div>
-        <div class="progress"><div style="width:${p * 100}%;${p >= 1 ? 'background:var(--pos)' : ''}"></div></div>
-        <div class="meta" style="margin-top:4px">${meta}</div>
-      </div>
-      <button class="icon-btn" data-act="edit-goal" data-id="${g.id}" title="Edit">✎</button><button class="icon-btn" data-act="del-goal" data-id="${g.id}" title="Delete">✕</button></div>`;
-  }).join('') : '<p class="muted">Set a goal (emergency fund, house deposit, holiday…) and track your progress.</p>';
+    return Object.values(g);
+  };
+  const owns = byType('asset'), owes = byType('liability').sort((a, b) => b.v - a.v);
+  if (state.holdings.length) owns.push({ name: 'Investments', n: 1, v: t.investments, inv: true });
+  owns.sort((a, b) => b.v - a.v);
+  const pal = palette().filter((_, i) => i !== 3); // red is for the debts
+  const part = (g, color) => `<div class="cat-row${g.inv ? '' : ' static'}"${g.inv ? ' data-act="go" data-tab="investments" title="Open Investments"' : ''}>
+      <span class="cat-name"><span class="sw" style="background:${color}"></span>${esc(g.name)}${g.n > 1 ? `<span class="muted">${g.n} accounts</span>` : ''}</span>
+      <div class="bar"><div style="width:${owned > 0 ? Math.max(0, Math.min(100, g.v / owned * 100)).toFixed(1) : 0}%;background:${color}"></div></div>
+      <span class="amt">${money(g.v)}</span>
+      <span class="chg muted">${owned > 0 ? shareTxt(g.v / owned) : ''}</span></div>`;
+  $('#nwBreakHint').textContent = owned > 0 ? `Share of all you own (${money(owned)})` : '';
+  $('#nwBreak').innerHTML = owns.length || owes.length
+    ? owns.map((g, i) => part(g, pal[i % pal.length])).join('') + (owes.length ? '<div class="sub-h" style="margin-top:12px">Debts</div>' + owes.map(g => part(g, css('--neg'))).join('') : '')
+    : '<p class="muted">Add your accounts and investments to see what your net worth is made of.</p>';
 }
 
 /* ---------- Settings ---------- */
@@ -2450,31 +2488,6 @@ $('#aForm').addEventListener('submit', e => {
   if (editAId) Object.assign(state.accounts.find(x => x.id === editAId), data);
   else state.accounts.push({ id: uid(), ...data });
   save(); $('#aDlg').close(); render();
-});
-
-let editGId = null;
-function openGoal(id) {
-  editGId = id || null;
-  const g = id ? state.goals.find(x => x.id === id) : null;
-  const f = $('#gForm');
-  $('#gTitle').textContent = g ? 'Edit savings goal' : 'Add savings goal';
-  f.name.value = g ? g.name : '';
-  f.target.value = g ? g.target : '';
-  f.deadline.value = g ? g.deadline || '' : '';
-  f.saved.value = g ? g.saved || '' : '';
-  f.account.innerHTML = '<option value="">None, I\'ll enter the amount</option>' + state.accounts.filter(a => a.kind === 'asset').map(a => `<option value="${a.id}"${g && g.account === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
-  $('#gSavedWrap').classList.toggle('hidden', !!f.account.value);
-  openDlg('gDlg');
-  f.name.focus();
-}
-$('#gForm').account.addEventListener('change', e => $('#gSavedWrap').classList.toggle('hidden', !!e.target.value));
-$('#gForm').addEventListener('submit', e => {
-  e.preventDefault();
-  const f = e.target;
-  const data = { name: f.name.value.trim(), target: +f.target.value, deadline: f.deadline.value, account: f.account.value, saved: +f.saved.value || 0 };
-  if (editGId) Object.assign(state.goals.find(x => x.id === editGId), data);
-  else state.goals.push({ id: uid(), ...data });
-  save(); $('#gDlg').close(); render();
 });
 
 /* =========================================================
@@ -4278,10 +4291,6 @@ function loadDemo() {
     fx: { base: state.settings.currency, rates: { USD: state.settings.currency === 'USD' ? 1 : 1.1 }, updated: 0 }
   };
   state.accounts.forEach(a => a.updated = Date.now());
-  state.goals = [
-    { id: uid(), name: 'Emergency fund (6 months)', target: 6000, account: state.accounts[2].id, saved: 0, deadline: '' },
-    { id: uid(), name: 'Summer holiday', target: 2500, saved: 900, account: '', deadline: localISO(new Date(now.getFullYear() + 1, 6, 1)) }
-  ];
   const t = totals();
   for (let i = 11; i >= 1; i--) {
     const f = 1 - i * 0.025 + (Math.random() - 0.5) * 0.01;
@@ -4392,12 +4401,7 @@ document.addEventListener('click', e => {
     case 'add-account': openAccount(null, el.dataset.kind); break;
     case 'edit-account': openAccount(id); break;
     case 'del-account':
-      if (confirm('Delete this account?')) { state.accounts = state.accounts.filter(a => a.id !== id); state.goals.forEach(g => { if (g.account === id) g.account = ''; }); save(); render(); }
-      break;
-    case 'add-goal': openGoal(); break;
-    case 'edit-goal': openGoal(id); break;
-    case 'del-goal':
-      if (confirm('Delete this goal?')) { state.goals = state.goals.filter(g => g.id !== id); save(); render(); }
+      if (confirm('Delete this account?')) { state.accounts = state.accounts.filter(a => a.id !== id); save(); render(); }
       break;
     case 'imp-all': importRows.forEach(r => r.include = true); renderImportRows(); break;
     case 'imp-none': importRows.forEach(r => r.include = false); renderImportRows(); break;
@@ -4456,7 +4460,7 @@ document.addEventListener('click', e => {
       }
       loadDemo(); break;
     case 'erase':
-      if (confirm(`Erase ALL your data (transactions, accounts, investments, goals)?${syncOn() ? ' It is also erased from your OneDrive and your other devices.' : ''} This cannot be undone unless you have a backup.`)) {
+      if (confirm(`Erase ALL your data (transactions, accounts, investments)?${syncOn() ? ' It is also erased from your OneDrive and your other devices.' : ''} This cannot be undone unless you have a backup.`)) {
         const settings = state.settings; state = defaultState(); state.settings = settings; resetPeriods(); save(); render(); toast('All data erased');
       }
       break;
@@ -4549,7 +4553,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.33 (prices update by themselves)';
+const APP_VERSION = '1.34 (net worth KPIs, no savings goals)';
 $('#appVersion').textContent = APP_VERSION;
 // a newer version published while the app is open: offer a reload rather than reloading by itself
 let updChecked = 0;
