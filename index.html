@@ -186,12 +186,12 @@ tr.acct-row.fold:hover .chev{background:var(--surface2)}
 .settings-grid .card label.field{margin-bottom:12px}
 .cat-group+.cat-group{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
 .cat-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
-.chip.cat-own{display:inline-flex;align-items:center;gap:2px;padding:2px 4px 2px 10px;font-size:13px;color:var(--text);background:var(--accent-soft)}
+.chip.cat-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 4px 2px 10px;font-size:13px;color:var(--text)}
+.chip.cat-own{background:var(--accent-soft);font-weight:600}
 .chip-btn{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;padding:2px 6px;border-radius:99px}
 .chip-btn:hover{background:var(--surface);color:var(--text)}
 .cat-add{display:flex;gap:6px}
 .cat-add input{flex:1}
-.cat-built{margin:6px 0 0}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13px;z-index:100;max-width:calc(100vw - 32px);box-shadow:0 6px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 .toast.err{background:var(--neg);color:#fff}
@@ -500,7 +500,7 @@ nav button .nav-ico,nav button .lbl-s{display:none}
       </div>
       <div class="card">
         <h3>Categories</h3>
-        <p class="hint" style="margin-top:0">Add your own next to the built-in ones. You can also add one while editing a transaction (<b>+ New category…</b> at the end of the list). Renaming one renames it on its transactions too.</p>
+        <p class="hint" style="margin-top:0">Rename any category with ✎, built-in ones included: its transactions follow. The ones you added (highlighted) can be deleted with ✕, and a renamed built-in one gets its name back with ↺. You can also add one while editing a transaction (<b>+ New category…</b> at the end of the list).</p>
         <div id="catBody"></div>
       </div>
       <div class="card">
@@ -750,12 +750,23 @@ const catsFor = type => {
   const base = CATS[type] || CATS.expense, own = myCats(type).filter(c => !base.includes(c)), last = base[base.length - 1];
   return /^Other/.test(last) ? [...base.slice(0, -1), ...own, last] : [...base, ...own];
 };
+// How a category shows. A built-in one you renamed keeps its own name in the data (the imports, the
+// auto-categories and the savings totals go by it) and shows the name you gave it
+// (state.catLabels[type][name]); your own categories are renamed for real.
+const catLabel = (c, type) => {
+  const L = state.catLabels || {};
+  if (type) return (L[type] && L[type][c]) || c;
+  for (const k of Object.keys(L)) if (L[k] && L[k][c]) return L[k][c];
+  return c;
+};
 const cleanCat = s => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+// the category of this type called `name`, by its own name or the one shown
+const findCat = (type, name, except) => catsFor(type).find(c => c !== except && (normalize(c) === normalize(name) || normalize(catLabel(c, type)) === normalize(name)));
 // adds a category (or finds the one already there with that name); returns its name, or null
 function addCategory(type, name) {
   name = cleanCat(name);
   if (!name) return null;
-  const have = catsFor(type).find(c => normalize(c) === normalize(name));
+  const have = findCat(type, name);
   if (have) return have;
   state.customCats = { ...(state.customCats || {}) };
   state.customCats[type] = [...myCats(type), name];
@@ -767,9 +778,22 @@ function promptCategory(type) {
   return addCategory(type, prompt(`Name of the new ${type} category:`, ''));
 }
 function renameCategory(type, from) {
-  const to = cleanCat(prompt(`Rename the "${from}" category to:`, from));
-  if (!to || to === from) return;
-  if (catsFor(type).some(c => c !== from && normalize(c) === normalize(to))) { toast(`There is already a "${to}" category`, true); return; }
+  const built = (CATS[type] || []).includes(from), now = catLabel(from, type);
+  const raw = prompt(built && now !== from ? `Rename "${now}" to (leave empty to go back to "${from}"):` : `Rename the "${now}" category to:`, now);
+  if (raw == null) return;
+  const to = cleanCat(raw) || (built ? from : '');
+  if (!to || to === now) return;
+  const clash = findCat(type, to, from);
+  if (clash) { toast(`There is already a "${catLabel(clash, type)}" category`, true); return; }
+  if (built) {
+    const L = { ...(state.catLabels || {}) };
+    L[type] = { ...(L[type] || {}) };
+    if (to === from) delete L[type][from]; else L[type][from] = to;
+    state.catLabels = L;
+    save(); render();
+    toast(to === from ? `Back to "${from}"` : `Renamed to "${to}"`);
+    return;
+  }
   state.customCats[type] = myCats(type).map(c => c === from ? to : c);
   let n = 0;
   for (const t of state.transactions) if (t.type === type && t.category === from) { t.category = to; n++; }
@@ -778,13 +802,13 @@ function renameCategory(type, from) {
   toast(`Renamed to "${to}"${n ? ` (${n} transaction${n === 1 ? '' : 's'})` : ''}`);
 }
 function deleteCategory(type, name) {
-  const to = FALLBACK_CAT[type], n = state.transactions.filter(t => t.type === type && t.category === name).length;
-  if (!confirm(n ? `Delete the "${name}" category? Its ${n} transaction${n === 1 ? '' : 's'} move to "${to}".` : `Delete the "${name}" category?`)) return;
+  const to = FALLBACK_CAT[type], toName = catLabel(to, type), n = state.transactions.filter(t => t.type === type && t.category === name).length;
+  if (!confirm(n ? `Delete the "${name}" category? Its ${n} transaction${n === 1 ? '' : 's'} move to "${toName}".` : `Delete the "${name}" category?`)) return;
   state.customCats[type] = myCats(type).filter(c => c !== name);
   for (const t of state.transactions) if (t.type === type && t.category === name) t.category = to;
   for (const k of Object.keys(state.rules)) if (k.startsWith(type + '|') && state.rules[k] === name) delete state.rules[k];
   save(); render();
-  toast(`Category deleted${n ? `: ${n} transaction${n === 1 ? '' : 's'} moved to "${to}"` : ''}`);
+  toast(`Category deleted${n ? `: ${n} transaction${n === 1 ? '' : 's'} moved to "${toName}"` : ''}`);
 }
 
 const KEYWORDS = {
@@ -882,6 +906,7 @@ function defaultState() {
     settings: { currency: cur, theme: 'auto', dateOrder: 'DMY', priceProvider: 'finnhub', apiKey: '' },
     transactions: [], holdings: [], accounts: [], goals: [], snapshots: [], rules: {},
     customCats: { expense: [], income: [], transfer: [] }, // categories you added
+    catLabels: { expense: {}, income: {}, transfer: {} }, // names you gave built-in categories
     // from imported investment statements: each account's latest figures (by account number),
     // the portfolio's value at each statement date, and the activity lines (dividends, buys…)
     invAccounts: {}, invHistory: [], invActivity: [], acctNames: {},
@@ -1557,7 +1582,7 @@ function renderDashboard() {
   $('#catEmpty').classList.toggle('hidden', !!entries.length);
   chart('chCategories', entries.length ? {
     type: 'doughnut',
-    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => round2(e[1])), backgroundColor: entries.map(e => color[e[0]] || OTHER_COLOR), borderColor: css('--surface'), borderWidth: 2 }] },
+    data: { labels: entries.map(e => catLabel(e[0], 'expense')), datasets: [{ data: entries.map(e => round2(e[1])), backgroundColor: entries.map(e => color[e[0]] || OTHER_COLOR), borderColor: css('--surface'), borderWidth: 2 }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: legendOpts('right'), tooltip: { callbacks: { label: c => ` ${c.label}: ${money(c.parsed)} (${(c.parsed / cur.exp * 100).toFixed(0)}%)` } } } }
   } : null);
 
@@ -1604,7 +1629,7 @@ function renderDashboard() {
     let chg = '<span class="muted">new</span>';
     if (p) { const d = (vv - p) / p; chg = Math.abs(d) < 0.005 ? '<span class="muted">same</span>' : `<span class="${d > 0 ? 'neg' : 'pos'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d * 100).toFixed(0)}%</span>`; }
     return `<div class="cat-row" data-act="drill" data-cat="${esc(c)}" title="Show these transactions">
-      <span class="cat-name"><span class="sw" style="background:${color[c]}"></span>${esc(c)}</span>
+      <span class="cat-name"><span class="sw" style="background:${color[c]}"></span>${esc(catLabel(c, 'expense'))}</span>
       <div class="bar"><div style="width:${(v / maxCat * 100).toFixed(1)}%;background:${color[c]}"></div></div>
       <span class="amt">${money(v)} <span class="muted" style="font-weight:400">${(v / cur.exp * 100).toFixed(0)}%</span></span>
       <span class="chg">${chg}</span></div>`;
@@ -1614,7 +1639,7 @@ function renderDashboard() {
   const incList = Object.entries(cur.incs).sort((a, b) => b[1] - a[1]);
   $('#incomeList').innerHTML = incList.length ? incList.map(([c, v]) => `
     <div class="list-row">
-      <div class="grow"><div class="name">${esc(c)}</div><div class="meta">${(v / cur.inc * 100).toFixed(0)}% of income${prev.incs[c] ? ` · ${prevLabel}: ${money(prev.incs[c])}` : ''}</div></div>
+      <div class="grow"><div class="name">${esc(catLabel(c, 'income'))}</div><div class="meta">${(v / cur.inc * 100).toFixed(0)}% of income${prev.incs[c] ? ` · ${prevLabel}: ${money(prev.incs[c])}` : ''}</div></div>
       <div class="amt pos">+${money(v)}</div>
     </div>`).join('') : '<p class="muted">No income in this period.</p>';
 
@@ -1623,7 +1648,7 @@ function renderDashboard() {
     .sort((a, b) => b.amount - a.amount).slice(0, 6);
   $('#bigList').innerHTML = big.length ? big.map(t => `
     <div class="list-row">
-      <div class="grow"><div class="name">${esc(t.desc)}</div><div class="meta">${dateLabel(t.date)} · ${esc(t.category)}</div></div>
+      <div class="grow"><div class="name">${esc(t.desc)}</div><div class="meta">${dateLabel(t.date)} · ${esc(catLabel(t.category, t.type))}</div></div>
       <div class="amt">−${money(t.amount)}</div>
     </div>`).join('') : '<p class="muted">No expenses in this period.</p>';
 }
@@ -1648,7 +1673,7 @@ function filteredTx() {
   const ty = $('#fType').value, cat = $('#fCat').value, q = normalize($('#fSearch').value.trim());
   return state.transactions.filter(t =>
     inPeriod(t.date) && (!ty || t.type === ty) && (!cat || t.category === cat) &&
-    (!q || normalize(t.desc + ' ' + t.category + ' ' + t.date).includes(q))
+    (!q || normalize(t.desc + ' ' + t.category + ' ' + catLabel(t.category, t.type) + ' ' + t.date).includes(q))
   ).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
 }
 function renderTransactions() {
@@ -1656,8 +1681,8 @@ function renderTransactions() {
   renderPeriodBar('tx');
   const fc = $('#fCat'), keep = pendingCat != null ? pendingCat : fc.value;
   pendingCat = null;
-  const used = [...new Set(state.transactions.map(t => t.category))].sort();
-  fc.innerHTML = '<option value="">All categories</option>' + used.map(c => `<option${c === keep ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  const used = [...new Set(state.transactions.map(t => t.category))].map(c => [c, catLabel(c)]).sort((a, b) => a[1].localeCompare(b[1]));
+  fc.innerHTML = '<option value="">All categories</option>' + used.map(([c, l]) => `<option value="${esc(c)}"${c === keep ? ' selected' : ''}>${esc(l)}</option>`).join('');
   const list = filteredTx();
   const shown = list.slice(0, 1500);
   for (const id of [...selected]) if (!state.transactions.some(t => t.id === id)) selected.delete(id);
@@ -1665,8 +1690,8 @@ function renderTransactions() {
     <tr>
       <td class="m-hide"><input type="checkbox" data-sel="${t.id}" ${selected.has(t.id) ? 'checked' : ''}></td>
       <td style="white-space:nowrap">${dateLabel(t.date)}</td>
-      <td class="desc" title="${esc(t.desc)}">${esc(t.desc)}<div class="m-only" style="margin-top:3px"><span class="chip ${t.type === 'transfer' ? 'transfer' : ''}">${esc(t.category)}</span></div></td>
-      <td class="m-hide"><span class="chip ${t.type === 'transfer' ? 'transfer' : ''}">${esc(t.category)}</span></td>
+      <td class="desc" title="${esc(t.desc)}">${esc(t.desc)}<div class="m-only" style="margin-top:3px"><span class="chip ${t.type === 'transfer' ? 'transfer' : ''}">${esc(catLabel(t.category, t.type))}</span></div></td>
+      <td class="m-hide"><span class="chip ${t.type === 'transfer' ? 'transfer' : ''}">${esc(catLabel(t.category, t.type))}</span></td>
       <td class="num ${t.type === 'income' ? 'pos' : t.type === 'transfer' ? 'muted' : ''}">${t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}${money(t.amount)}</td>
       <td class="num" style="white-space:nowrap"><button class="icon-btn" data-act="edit-tx" data-id="${t.id}" title="Edit">✎</button><button class="icon-btn m-hide" data-act="del-tx" data-id="${t.id}" title="Delete">✕</button></td>
     </tr>`).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">${state.transactions.length ? (period.mode === 'all' ? 'No transactions match these filters.' : 'Nothing here for this period. Pick another month, or click <b>All</b> to search every month.') : 'No transactions yet. Add one or import a bank statement.'}</td></tr>`;
@@ -2151,16 +2176,21 @@ function renderSettings() {
   $('#sTsxKey').value = s.tsxKey || '';
   renderCategories();
 }
-// Settings › Categories: yours (rename, delete) and an Add box for each type, the built-in ones listed
+// Settings › Categories: every category of each type, with ✎ to rename it (✕ to delete one of yours,
+// ↺ to give a renamed built-in one its name back), and an Add box
 function renderCategories() {
   const groups = [['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers (not counted as income or expenses)']];
+  const btn = (act, type, c, sym, what) => `<button class="chip-btn" data-act="${act}" data-type="${type}" data-name="${esc(c)}" title="${what}" aria-label="${what}: ${esc(catLabel(c, type))}">${sym}</button>`;
   $('#catBody').innerHTML = groups.map(([type, label]) => {
-    const own = myCats(type), uses = c => state.transactions.filter(t => t.type === type && t.category === c).length;
+    const own = new Set(myCats(type)), uses = c => state.transactions.filter(t => t.type === type && t.category === c).length;
+    const chip = c => {
+      const n = uses(c), renamed = catLabel(c, type) !== c, tip = `${n} transaction${n === 1 ? '' : 's'}${renamed ? ` · built-in “${c}”, renamed` : ''}`;
+      return `<span class="chip cat-chip${own.has(c) ? ' cat-own' : ''}" title="${esc(tip)}">${esc(catLabel(c, type))}${btn('cat-rename', type, c, '✎', 'Rename')}${own.has(c) ? btn('cat-del', type, c, '✕', 'Delete') : renamed ? btn('cat-reset', type, c, '↺', `Back to “${esc(c)}”`) : ''}</span>`;
+    };
     return `<div class="cat-group">
       <div class="sub-h">${label}</div>
-      <div class="cat-chips">${own.length ? own.map(c => `<span class="chip cat-own" title="${uses(c)} transaction${uses(c) === 1 ? '' : 's'}">${esc(c)}<button class="chip-btn" data-act="cat-rename" data-type="${type}" data-name="${esc(c)}" title="Rename" aria-label="Rename ${esc(c)}">✎</button><button class="chip-btn" data-act="cat-del" data-type="${type}" data-name="${esc(c)}" title="Delete" aria-label="Delete ${esc(c)}">✕</button></span>`).join('') : '<span class="muted" style="font-size:13px">None of your own yet</span>'}</div>
+      <div class="cat-chips">${catsFor(type).map(chip).join('')}</div>
       <form class="cat-add" data-type="${type}"><input name="name" maxlength="40" placeholder="New ${type} category" autocomplete="off"><button class="btn sm">Add</button></form>
-      <div class="hint cat-built">Built-in: ${CATS[type].map(esc).join(', ')}</div>
     </div>`;
   }).join('');
 }
@@ -2168,8 +2198,8 @@ $('#catBody').addEventListener('submit', e => {
   e.preventDefault();
   const form = e.target, type = form.dataset.type, raw = cleanCat(form.name.value);
   if (!raw) return;
-  const had = catsFor(type).find(c => normalize(c) === normalize(raw));
-  if (had) { toast(`"${had}" is already a category`, true); return; }
+  const had = findCat(type, raw);
+  if (had) { toast(catLabel(had, type) !== had && normalize(had) === normalize(raw) ? `"${had}" is the built-in category you renamed "${catLabel(had, type)}"` : `"${catLabel(had, type)}" is already a category`, true); return; }
   addCategory(type, raw); render();
   toast(`Added the "${raw}" category`);
   const again = $(`#catBody form[data-type="${type}"] input`);
@@ -2187,7 +2217,7 @@ function applyTheme() {
 function openDlg(id) { const d = document.getElementById(id); d.showModal(); return d; }
 // a category list, with "+ New category…" at the end
 const NEW_CAT = '__new';
-const catOptions = (type, value) => catsFor(type).map(c => `<option${c === value ? ' selected' : ''}>${esc(c)}</option>`).join('') + `<option value="${NEW_CAT}">+ New category…</option>`;
+const catOptions = (type, value) => catsFor(type).map(c => `<option value="${esc(c)}"${c === value ? ' selected' : ''}>${esc(catLabel(c, type))}</option>`).join('') + `<option value="${NEW_CAT}">+ New category…</option>`;
 function fillCatSelect(sel, type, value) {
   sel.innerHTML = catOptions(type, value);
   sel.dataset.prev = sel.value;
@@ -2220,7 +2250,7 @@ function similarTx() {
 function updateSimilar() {
   const others = similarTx(), f = $('#txForm');
   $('#txSimilarWrap').classList.toggle('hidden', !others.length);
-  if (others.length) $('#txSimilarText').textContent = `Also put the ${others.length} other "${merchantKey(f.desc.value).toUpperCase()}" transaction${others.length === 1 ? '' : 's'} in ${f.category.value}`;
+  if (others.length) $('#txSimilarText').textContent = `Also put the ${others.length} other "${merchantKey(f.desc.value).toUpperCase()}" transaction${others.length === 1 ? '' : 's'} in ${catLabel(f.category.value, f.type.value)}`;
 }
 $('#txForm').type.addEventListener('change', e => { const f = $('#txForm'); fillCatSelect(f.category, f.type.value, guessCategory(f.desc.value, f.type.value)); updateSimilar(); });
 $('#txForm').category.addEventListener('change', e => {
@@ -3974,7 +4004,7 @@ function renderCheckBank(r) {
   let html = `<div class="chk-st"><h3>${many ? `${chk.bank.length} statements` : 'Statement'} from ${span}</h3>
     <div class="chk-note">${head}${notes.length ? '<br>' + notes.join('<br>') : ''}</div>`;
   if (r.missing.length) html += chkSec('On the statement, not in your entries', r.missing.length,
-    r.missing.map((l, i) => chkRow(esc(l.desc), `${dateLabel(l.date)} · ${esc(l.category)}${src(l)}${l.flag ? ` · <span class="warn">${esc(l.flag)}</span>` : ''}`, chkAmt(l.amount, l.type),
+    r.missing.map((l, i) => chkRow(esc(l.desc), `${dateLabel(l.date)} · ${esc(catLabel(l.category, l.type))}${src(l)}${l.flag ? ` · <span class="warn">${esc(l.flag)}</span>` : ''}`, chkAmt(l.amount, l.type),
       `<button class="btn sm" data-act="chk-add" data-i="${i}">Add</button>`)).join(''),
     '', r.missing.length > 1 ? `<button class="btn sm primary" data-act="chk-add-all">Add all ${r.missing.length}</button>` : '');
   if (r.diff.length) html += chkSec('Different amount or type', r.diff.length, r.diff.map((p, i) => {
@@ -3982,11 +4012,11 @@ function renderCheckBank(r) {
     return p.kind === 'amount'
       ? chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)} · you entered <b>${money(t.amount)}</b>${yours}${when}`, chkAmt(l.amount, l.type),
           `<button class="btn sm" data-act="chk-use" data-i="${i}">Use ${money(l.amount)}</button><button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button>`)
-      : chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)} · the statement says ${l.type === 'income' ? 'money in' : l.type === 'expense' ? 'money out' : 'a transfer'}, you entered it as ${t.type === 'transfer' ? 'a transfer' : 'an ' + t.type} (${esc(t.category)})${yours}${when}`, chkAmt(l.amount, l.type),
+      : chkRow(esc(l.desc), `${dateLabel(l.date)}${src(l)} · the statement says ${l.type === 'income' ? 'money in' : l.type === 'expense' ? 'money out' : 'a transfer'}, you entered it as ${t.type === 'transfer' ? 'a transfer' : 'an ' + t.type} (${esc(catLabel(t.category, t.type))})${yours}${when}`, chkAmt(l.amount, l.type),
           `<button class="btn sm" data-act="chk-use" data-i="${i}">Make it ${l.type === 'transfer' ? 'a transfer' : l.type === 'income' ? 'income' : 'an expense'}</button><button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button>`);
   }).join(''));
   if (r.extra.length) html += chkSec('In your entries, not on the statement', r.extra.length,
-    r.extra.map(t => chkRow(esc(t.desc), `${dateLabel(t.date)} · ${esc(t.category)}${r.twice.has(t) ? ' · <span class="warn">same amount as an entry that matches: entered twice?</span>' : ''}`, chkAmt(t.amount, t.type),
+    r.extra.map(t => chkRow(esc(t.desc), `${dateLabel(t.date)} · ${esc(catLabel(t.category, t.type))}${r.twice.has(t) ? ' · <span class="warn">same amount as an entry that matches: entered twice?</span>' : ''}`, chkAmt(t.amount, t.type),
       `<button class="btn sm" data-act="edit-tx" data-id="${t.id}">Edit</button><button class="btn sm danger" data-act="del-tx" data-id="${t.id}">Delete</button>`)).join(''),
     'Paid cash, with another card or from another account? Those are fine. Otherwise it may be a mistake or entered twice.');
   if (r.ok.length) html += `<details class="chk-sec"><summary>${r.ok.length} line${s(r.ok.length)} match${r.ok.length === 1 ? 'es' : ''} your entries</summary>${r.ok.map(p => {
@@ -4107,7 +4137,7 @@ function download(name, text, type) {
 function exportCsv() {
   const q = v => /[",;\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v;
   const lines = [['Date', 'Description', 'Type', 'Category', 'Amount'].join(',')];
-  [...state.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach(t => lines.push([t.date, q(t.desc), t.type, q(t.category), (t.type === 'expense' ? -t.amount : t.amount).toFixed(2)].join(',')));
+  [...state.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach(t => lines.push([t.date, q(t.desc), t.type, q(catLabel(t.category, t.type)), (t.type === 'expense' ? -t.amount : t.amount).toFixed(2)].join(',')));
   download(`transactions-${localISO()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv');
 }
 function loadDemo() {
@@ -4221,6 +4251,12 @@ document.addEventListener('click', e => {
     case 'chk-import': { const st = chk && chk.inv[+el.dataset.i]; if (!st) break; $('#chkDlg').close(); openInvImport([st]); break; }
     case 'cat-rename': renameCategory(el.dataset.type, el.dataset.name); break;
     case 'cat-del': deleteCategory(el.dataset.type, el.dataset.name); break;
+    case 'cat-reset': { // a renamed built-in category gets its own name back
+      const { type, name } = el.dataset;
+      if (state.catLabels && state.catLabels[type]) { state.catLabels = { ...state.catLabels, [type]: { ...state.catLabels[type] } }; delete state.catLabels[type][name]; }
+      save(); render(); toast(`Back to "${name}"`);
+      break;
+    }
     case 'add-tx': openTx(); break;
     case 'edit-tx': openTx(id); break;
     case 'del-tx':
@@ -4417,7 +4453,7 @@ try {
 /* =========================================================
    Start
    ========================================================= */
-const APP_VERSION = '1.31 (your own categories, iPhone fixes)';
+const APP_VERSION = '1.32 (rename any category)';
 $('#appVersion').textContent = APP_VERSION;
 // a newer version published while the app is open: offer a reload rather than reloading by itself
 let updChecked = 0;
