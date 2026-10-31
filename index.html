@@ -1877,8 +1877,8 @@ function drawHoldings(groups, keys, grouped, value, base) {
   const shown = Object.fromEntries(keys.map(k => [k, groups[k].filter(match)]));
   const visKeys = filtering ? keys.filter(k => shown[k].length) : keys;
   const nHold = state.holdings.filter(h => h.type !== 'Cash').length, nShown = sum(visKeys, k => shown[k].filter(h => h.type !== 'Cash').length);
-  $('#hSummary').textContent = filtering ? `${nShown} of ${nHold} holding${nHold === 1 ? '' : 's'} shown`
-    : grouped ? `${nHold} holding${nHold === 1 ? '' : 's'} in ${keys.length} account${keys.length === 1 ? '' : 's'}` : '';
+  // only while searching or filtering: how many holdings match
+  $('#hSummary').textContent = filtering ? `${nShown} of ${nHold} holding${nHold === 1 ? '' : 's'} shown` : '';
   // the sort controls and the sorted column's arrow
   $('#hSortBy').value = sort.by;
   const words = H_SORTS[sort.by][2] > 0 ? ['A to Z', 'Z to A'] : ['Highest first', 'Lowest first'];
